@@ -1,39 +1,38 @@
 local LUCIDE = {
-    ["egg"] = {16898669689,256,256,514,514},
-    ["workflow"] = {16898791187,256,256,514,0},
-    ["arrow-up"] = {16898614574,256,256,257,257},
-    ["chart-no-axes-column-increasing"] = {16898615143,256,256,0,257},
-    ["gauge"] = {16898672166,256,256,0,514},
-    ["settings-2"] = {16898734421,256,256,0,257},
-    ["funnel"] = {16898670775,256,256,0,0},
-    ["bug"] = {16898616879,256,256,0,257},
-    ["smartphone"] = {16898735040,256,256,257,514},
-    ["database"] = {16898668755,256,256,0,514},
-    ["search"] = {16898734242,256,256,257,0},
-    ["minus"] = {16898728878,256,256,514,0},
-    ["keyboard"] = {16898673794,256,256,257,0},
-    ["chevron-down"] = {16898617411,256,256,514,257},
-    ["arrow-up-right"] = {16898614410,256,256,514,514},
-    ["refresh-cw"] = {16898733146,256,256,257,0},
-    ["package"] = {16898730641,256,256,514,0},
-    ["house"] = {16898673271,256,256,257,514},
-    ["zap"] = {16898791349,256,256,257,257},
-    ["check"] = {16898617411,256,256,257,0},
-    ["sliders-horizontal"] = {16898735040,256,256,0,257},
-    ["panel-left-close"] = {16898730821,256,256,514,257},
-    ["panel-right-close"] = {16898731024,256,256,0,257},
-    ["move-down-right"] = {16898729572,256,256,0,514},
-    ["plus"] = {16898732061,256,256,514,0},
-    ["move"] = {16898729752,256,256,0,514},
-    ["info"] = {16898673523,256,256,257,257},
-    ["copy"] = {16898619423,256,256,257,514},
-    ["gamepad-2"] = {16898672166,256,256,0,0},
-    ["settings"] = {16898734421,256,256,514,0},
+    ["egg"] = {117851493400222,0,0,0,0},
+    ["workflow"] = {99186544029189,0,0,0,0},
+    ["arrow-up"] = {89282378235317,0,0,0,0},
+    ["chart-no-axes-column-increasing"] = {140383830943049,0,0,0,0},
+    ["gauge"] = {110273524101447,0,0,0,0},
+    ["settings-2"] = {135684703553372,0,0,0,0},
+    ["funnel"] = {108829540827529,0,0,0,0},
+    ["bug"] = {83626408925438,0,0,0,0},
+    ["smartphone"] = {96623008834511,0,0,0,0},
+    ["database"] = {126791525623846,0,0,0,0},
+    ["search"] = {121018724060431,0,0,0,0},
+    ["minus"] = {118026365011536,0,0,0,0},
+    ["keyboard"] = {121474456068237,0,0,0,0},
+    ["chevron-down"] = {134243273101015,0,0,0,0},
+    ["arrow-up-right"] = {129280608535523,0,0,0,0},
+    ["refresh-cw"] = {138133190015277,0,0,0,0},
+    ["package"] = {97261141732706,0,0,0,0},
+    ["house"] = {98755624629571,0,0,0,0},
+    ["zap"] = {130551565616516,0,0,0,0},
+    ["check"] = {93898873302694,0,0,0,0},
+    ["sliders-horizontal"] = {85538382643347,0,0,0,0},
+    ["panel-left-close"] = {126579818823552,0,0,0,0},
+    ["panel-right-close"] = {139528655524132,0,0,0,0},
+    ["move-down-right"] = {101479760041877,0,0,0,0},
+    ["plus"] = {111774323017047,0,0,0,0},
+    ["move"] = {116138709011735,0,0,0,0},
+    ["info"] = {124560466474914,0,0,0,0},
+    ["copy"] = {78979572434545,0,0,0,0},
+    ["gamepad-2"] = {92483947987410,0,0,0,0},
+    ["settings"] = {80758916183665,0,0,0,0},
 }
 local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
 local Tween=game:GetService("TweenService")
-local ContentProvider=game:GetService("ContentProvider")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
 local Limbo={Version="1.1.0"}
@@ -1200,13 +1199,6 @@ currentWindow=Window
 gui.Destroying:Connect(function() for _,c in ipairs(connections) do c:Disconnect() end end)
 root.Visible=false; canvas.Visible=false
 
-task.spawn(function()
-    local assets,seen={},{}
-    for _,asset in pairs(LUCIDE) do
-        if not seen[asset[1]] then seen[asset[1]]=true; table.insert(assets,"rbxassetid://"..asset[1]) end
-    end
-    pcall(function() ContentProvider:PreloadAsync(assets) end)
-end)
 return Window
 end
 function Limbo:Notify(config)
