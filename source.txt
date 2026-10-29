@@ -34,7 +34,7 @@ local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.3.0",SupportsMultiSelect=true}
+local Limbo={Version="1.4.0",SupportsMultiSelect=true,SupportsSubTabs=true}
 assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
@@ -121,6 +121,10 @@ local LOGO=config.Logo or "rbxassetid://97957114633547"
 local GAME_NAME=config.Subtitle or "NAMA GAME"
 local BRAND_NAME=config.Title or "LIMBO HUB"
 local MODE_TAB=config.ModeTab or "Eggs"
+local MODE_TABS=config.SubTabs or {"Steal","Manage"}
+assert(type(MODE_TABS)=="table" and #MODE_TABS>0,"SubTabs must contain at least one name")
+local MODE_LABELS=config.ModeLabels or {}
+local MODE_WIDTH=(config.SubTabs or config.ModeLabels) and 148 or 116
 local FONT_BODY=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontWeight.Bold)
 local FONT_STRONG=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontWeight.ExtraBold)
 local fontScale=1
@@ -210,13 +214,15 @@ search.Focused:Connect(function() animate(searchBorder,{Color=C.blue,Transparenc
 search.FocusLost:Connect(function() animate(searchBorder,{Color=C.border,Transparency=.5}) end)
 local minimize=button(header,"Minimize"); hover(minimize)
 local minus=icon(minimize,"minus",20,C.muted); minus.Position=UDim2.fromOffset(12,12)
-local modes=box(root,"ModeBar",C.sidebar); corner(modes,12); border(modes,.8)
+local modes=make("ScrollingFrame",{Name="ModeBar",BackgroundColor3=C.sidebar,BorderSizePixel=0,ScrollBarThickness=0,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.X,ElasticBehavior=Enum.ElasticBehavior.Never,ClipsDescendants=true},root); corner(modes,12); border(modes,.8)
 local modeIndicator=box(modes,"ActivePill",C.hover); corner(modeIndicator,9)
 local modeButtons={}
-for i,item in ipairs({{"Steal","egg"},{"Manage","arrow-up-right"}}) do
-    local b=button(modes,item[1]); hover(b); place(b,4+(i-1)*118,4,116,44)
-    local ico=icon(b,item[2],16,C.muted); ico.Position=UDim2.fromOffset(14,14)
-    local caption=text(b,"Label",item[1],14,C.muted,true); place(caption,40,0,73,44); modeButtons[item[1]]=b
+for i,name in ipairs(MODE_TABS) do
+    assert(type(name)=="string" and name:match("%S") and not modeButtons[name],"Subtab names must be nonempty and unique")
+    local b=button(modes,name); hover(b); place(b,4+(i-1)*(MODE_WIDTH+2),4,MODE_WIDTH,44)
+    local caption=text(b,"Label",MODE_LABELS[name] or name,14,C.muted,true); place(caption,8,0,MODE_WIDTH-16,44)
+    caption.TextXAlignment=Enum.TextXAlignment.Center
+    modeButtons[name]=b
 end
 local content=make("ScrollingFrame",{Name="Content",BackgroundTransparency=1,BorderSizePixel=0,CanvasSize=UDim2.new(),ScrollBarThickness=3,ScrollBarImageColor3=C.faint,ScrollingDirection=Enum.ScrollingDirection.Y,ElasticBehavior=Enum.ElasticBehavior.WhenScrollable,ClipsDescendants=true},root)
 local footer=box(root,"Footer"); footer.BackgroundTransparency=1
@@ -350,7 +356,7 @@ layout=function()
     end)
 end
 local activePage=config.DefaultTab or saved.ActivePage or "Eggs"
-local activeMode=saved.Mode=="Manage" and "Manage" or "Steal"
+local activeMode=modeButtons[saved.Mode] and saved.Mode or MODE_TABS[1]
 local sidebarCollapsed=saved.SidebarCollapsed==true
 gui:SetAttribute("SidebarCollapsed",sidebarCollapsed)
 local openMenu
@@ -688,8 +694,7 @@ end
 local function mode(value)
     closeDropdown(); activeMode=value; gui:SetAttribute("Mode",value); search.Text=""; content.CanvasPosition=Vector2.zero; layout()
 end
-modeButtons.Steal.Activated:Connect(function() mode("Steal") end)
-modeButtons.Manage.Activated:Connect(function() mode("Manage") end)
+for name,b in pairs(modeButtons) do b.Activated:Connect(function() mode(name) end) end
 local function rowHeight(r,width)
     if r.kind=="games" then return #r.entries==0 and 68 or math.ceil(#r.entries/2)*98 end
     if r.kind=="banner" then return #r.tags>0 and 250 or 208 end
@@ -802,9 +807,13 @@ performLayout=function()
     place(headerLine,0,72,mainWidth,1)
     place(searchShell,mainWidth-318,19,272,38)
     place(minimize,mainWidth-36,19,36,38); place(minus,8,9,20,20)
-    modes.Visible=activePage==MODE_TAB; place(modes,mainX,headerH,244,52)
-    animate(modeIndicator,{Position=UDim2.fromOffset(activeMode=="Steal" and 4 or 122,4),Size=UDim2.fromOffset(116,44)},.16)
-    for name,b in pairs(modeButtons) do local on=name==activeMode; b.Label.TextColor3=on and C.text or C.muted; tint(b.Icon,on and C.blue or C.faint) end
+    local modeBarWidth=#MODE_TABS*(MODE_WIDTH+2)+8
+    modes.Visible=activePage==MODE_TAB; place(modes,mainX,headerH,math.min(mainWidth,modeBarWidth),52)
+    modes.CanvasSize=UDim2.fromOffset(modeBarWidth,0)
+    local activeButton=modeButtons[activeMode]
+    animate(modeIndicator,{Position=activeButton.Position,Size=activeButton.Size},.16)
+    modes.CanvasPosition=Vector2.new(math.clamp(activeButton.Position.X.Offset-4,0,math.max(0,modeBarWidth-mainWidth)),0)
+    for name,b in pairs(modeButtons) do local on=name==activeMode; b.Label.TextColor3=on and C.text or C.muted end
     local top=headerH+(activePage==MODE_TAB and 62 or 5)
     local contentH=BASE_H-top-36
     place(content,mainX,top,mainWidth,contentH)
@@ -887,7 +896,7 @@ for _,c in ipairs(cards) do
     for _,r in ipairs(c.rows) do
         if r.kind~="tabs" then
             local path={c.page}
-            if c.mode and c.mode~=c.heading then table.insert(path,c.mode) end
+            if c.mode and c.mode~=c.heading then table.insert(path,MODE_LABELS[c.mode] or c.mode) end
             table.insert(path,c.heading)
             if r.tab then table.insert(path,r.tab) end
             local location=table.concat(path," / ")
@@ -1288,7 +1297,7 @@ function Window:Tab(cfg)
     function tab:Section(sectionConfig)
         local heading=titleOf(sectionConfig)
         local mode=sectionConfig.Mode
-        assert(mode==nil or mode=="Steal" or mode=="Manage","Mode must be Steal or Manage")
+        assert(mode==nil or modeButtons[mode]~=nil,"Section Mode must match a configured subtab name")
         local column=sectionConfig.Column or 1; assert(column==1 or column==2,"Column must be 1 or 2")
         local iconName=sectionConfig.Icon==nil and "workflow" or sectionConfig.Icon; assert(iconName==false or LUCIDE[iconName],"Unknown section icon")
         local name=sectionConfig.Name or heading:gsub("[^%w_]","").."Card"
