@@ -35,7 +35,7 @@ local Input=game:GetService("UserInputService")
 local Tween=game:GetService("TweenService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.1.0"}
+local Limbo={Version="1.2.0",SupportsMultiSelect=true}
 assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
@@ -403,23 +403,62 @@ local function toggle(c,name,caption,default)
     b.Activated:Connect(function() r.Set(not gui:GetAttribute(name)) end)
     return r
 end
-local function dropdown(c,name,caption,options,default,full)
+local function dropdown(c,name,caption,options,default,full,multi,placeholder)
     local r=row(c,full and "selectFull" or "select",name,caption)
     r.label=text(r.frame,"Label",caption,16,C.muted); r.label.TextWrapped=true
     local b=button(r.frame,"Select"); b.BackgroundColor3=C.field; b.BackgroundTransparency=0; border(b,.6); hover(b); r.control=b
-    local value=initial(name,default); if not table.find(options,value) then value=default; gui:SetAttribute(name,value) end
+    local value=multi and "" or initial(name,default)
+    if not multi and not table.find(options,value) then value=default; gui:SetAttribute(name,value) end
     local captionLabel=text(b,"Value",value,16,C.text); captionLabel.Position=UDim2.fromOffset(12,0); captionLabel.Size=UDim2.new(1,-45,1,0); captionLabel.TextTruncate=Enum.TextTruncate.AtEnd
     local arrow=icon(b,"chevron-down",15,C.muted); arrow.Position=UDim2.new(1,-28,.5,-7.5)
-    r.Set=function(value)
-        assert(table.find(options,value),"Dropdown value is not in Values")
-        captionLabel.Text=value; gui:SetAttribute(name,value)
+    local optionRows={}
+    local Http=multi and game:GetService("HttpService")
+    local function selectionOf(value,allowMissing)
+        if type(value)=="string" then local ok,decoded=pcall(Http.JSONDecode,Http,value); if not ok then return nil end; value=decoded end
+        if type(value)~="table" then return nil end
+        local selected,seen={},{}
+        for key,item in pairs(value) do
+            if type(key)~="number" or key%1~=0 or key<1 or key>#value or type(item)~="string" then return nil end
+            if not allowMissing and not table.find(options,item) then return nil end
+        end
+        for _,item in ipairs(value) do
+            if table.find(options,item) and not seen[item] then table.insert(selected,item); seen[item]=true end
+        end
+        return selected
+    end
+    local function paintSelection()
+        if not multi then return end
+        local selected=r.Get()
+        captionLabel.Text=#selected>0 and table.concat(selected,", ") or (placeholder or "Any")
+        for option,item in pairs(optionRows) do
+            local on=table.find(selected,option)~=nil
+            item.label.TextColor3=on and C.blue or C.text; item.check.Visible=on
+        end
+    end
+    r.multi=multi==true
+    if multi then
+        r.Get=function() return selectionOf(gui:GetAttribute(name),true) or {} end
+        r.Validate=function(nextValue) return selectionOf(nextValue,false)~=nil end
+        r.Set=function(nextValue)
+            local selected=selectionOf(nextValue,false); assert(selected,"Invalid dropdown selections")
+            gui:SetAttribute(name,Http:JSONEncode(selected)); paintSelection()
+        end
+        r.Set(selectionOf(saved[name],true) or selectionOf(default,false) or {})
+        track(gui:GetAttributeChangedSignal(name):Connect(paintSelection))
+    else
+        r.Set=function(nextValue)
+            assert(table.find(options,nextValue),"Dropdown value is not in Values")
+            captionLabel.Text=nextValue; gui:SetAttribute(name,nextValue)
+        end
     end
     r.options=options
     r.Refresh=function(values)
         assert(type(values)=="table","Dropdown values must be a table")
         for _,value in ipairs(values) do assert(type(value)=="string","Dropdown values must be strings") end
-        closeDropdown(); options=#values>0 and table.clone(values) or {"None"}; r.options=options
-        if not table.find(options,gui:GetAttribute(name)) then r.Set(options[1]) end
+        closeDropdown(); local selected=multi and r.Get()
+        options=(multi or #values>0) and table.clone(values) or {"None"}; r.options=options; optionRows={}
+        if multi then r.Set(selectionOf(selected,true))
+        elseif not table.find(options,gui:GetAttribute(name)) then r.Set(options[1]) end
     end
     b.Activated:Connect(function()
         if openMenu and openMenu:GetAttribute("Owner")==name then closeDropdown(); return end
@@ -427,7 +466,7 @@ local function dropdown(c,name,caption,options,default,full)
         local dismiss=button(root,"DismissDropdown"); dismiss.Size=UDim2.fromScale(1,1); dismiss.ZIndex=50; dismiss.Activated:Connect(closeDropdown)
         local left,top,right,bottom=popupBounds()
         local width=math.min(right-left,math.max(b.AbsoluteSize.X/scaleFactor,208))
-        local height=math.min(#options*46+62,bottom-top,320)
+        local height=math.min((#options+(multi and 1 or 0))*46+62,bottom-top,320)
         local p=(b.AbsolutePosition-root.AbsolutePosition)/scaleFactor
         local y=p.Y+b.AbsoluteSize.Y/scaleFactor+6; if y+height>bottom then y=p.Y-height-6 end
         y=math.clamp(y,top,bottom-height)
@@ -439,23 +478,43 @@ local function dropdown(c,name,caption,options,default,full)
         local list=make("ScrollingFrame",{Name="Options",BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=C.faint,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.Y,ZIndex=61,Position=UDim2.fromOffset(4,52),Size=UDim2.new(1,-8,1,-56)},menu)
         local noResults=text(list,"NoResults","No results found",14,C.muted); noResults.TextXAlignment=Enum.TextXAlignment.Center; place(noResults,4,0,width-16,44); noResults.Visible=false
         local choices={}
+        optionRows={}
+        if multi then
+            local clear=button(list,"ClearSelection"); clear.ZIndex=62; place(clear,0,0,width-8,44); hover(clear)
+            local label=text(clear,"Label","Clear selection",14,C.muted); label.Position=UDim2.fromOffset(12,0); label.Size=UDim2.new(1,-24,1,0)
+            clear.Activated:Connect(function() r.Set({}) end)
+            table.insert(choices,{button=clear,label="",always=true})
+        end
+        local selected=multi and r.Get()
         for i,opt in ipairs(options) do
             local choice=button(list,"Option"..i); choice.ZIndex=62; place(choice,0,(i-1)*46,width-8,44); hover(choice)
-            local caption=text(choice,"Label",opt,14,opt==captionLabel.Text and C.blue or C.text); caption.Position=UDim2.fromOffset(12,0); caption.Size=UDim2.new(1,-44,1,0)
-            if opt==captionLabel.Text then local check=icon(choice,"check",16,C.blue); check.Position=UDim2.new(1,-28,.5,-8) end
-            choice.Activated:Connect(function() r.Set(opt); closeDropdown() end)
+            local on=multi and table.find(selected,opt)~=nil or not multi and opt==captionLabel.Text
+            local caption=text(choice,"Label",opt,14,on and C.blue or C.text); caption.Position=UDim2.fromOffset(12,0); caption.Size=UDim2.new(1,-44,1,0)
+            local check=icon(choice,"check",16,C.blue); check.Position=UDim2.new(1,-28,.5,-8); check.Visible=on
+            optionRows[opt]={label=caption,check=check}
+            choice.Activated:Connect(function()
+                if multi then
+                    local nextValue=r.Get(); local index=table.find(nextValue,opt)
+                    if index then table.remove(nextValue,index) else table.insert(nextValue,opt) end
+                    r.Set(nextValue)
+                else r.Set(opt); closeDropdown() end
+            end)
             table.insert(choices,{button=choice,label=string.lower(opt)})
         end
         local function filterOptions()
             local query=string.match(string.lower(popupSearch.Text),"^%s*(.-)%s*$")
-            local count=0
+            local count,matched=0,0
             for _,item in ipairs(choices) do
-                local matches=query=="" or string.find(item.label,query,1,true)~=nil
+                local matches=item.always or query=="" or string.find(item.label,query,1,true)~=nil
                 item.button.Visible=matches
-                if matches then item.button.Position=UDim2.fromOffset(0,count*46); count+=1 end
+                if matches then
+                    item.button.Position=UDim2.fromOffset(0,count*46); count+=1
+                    if not item.always then matched+=1 end
+                end
             end
-            list.CanvasPosition=Vector2.zero; list.CanvasSize=UDim2.fromOffset(0,math.max(count*46,44))
-            noResults.Visible=count==0
+            list.CanvasPosition=Vector2.zero; list.CanvasSize=UDim2.fromOffset(0,math.max(count*46,44)+(multi and matched==0 and 44 or 0))
+            noResults.Position=UDim2.fromOffset(4,multi and matched==0 and 46 or 0)
+            noResults.Visible=matched==0
         end
         popupSearch:GetPropertyChangedSignal("Text"):Connect(filterOptions)
         filterOptions()
@@ -901,14 +960,15 @@ local function bindControl(section,cfg,r)
     r.save=cfg.Save~=false
     local handle={Instance=r.frame,Flag=name}
     function handle:Set(value) assert(r.Set,"This control has no value"); r.Set(value) end
-    function handle:Get() return gui:GetAttribute(name) end
+    local function readValue() if r.Get then return r.Get() end; return gui:GetAttribute(name) end
+    function handle:Get() return readValue() end
     handle.SetValue=handle.Set
     if r.Refresh then function handle:Refresh(values) r.Refresh(values) end end
-    setmetatable(handle,{__index=function(_,key) if key=="Value" then return gui:GetAttribute(name) end end})
+    setmetatable(handle,{__index=function(_,key) if key=="Value" then return readValue() end end})
     if cfg.Callback and r.kind~="action" then
         assert(type(cfg.Callback)=="function","Callback must be a function")
         track(gui:GetAttributeChangedSignal(name):Connect(function()
-            local ok,err=pcall(cfg.Callback,gui:GetAttribute(name))
+            local ok,err=pcall(cfg.Callback,readValue())
             if not ok then warn("[LimboUI Callback] "..tostring(err)) end
         end))
     end
@@ -926,11 +986,10 @@ function SectionMethods:Toggle(cfg)
 end
 function SectionMethods:Dropdown(cfg)
     local title=titleOf(cfg)
-    assert(type(cfg.Values)=="table" and #cfg.Values>0,"Dropdown requires Values")
-    assert(not cfg.Multi,"This UI currently supports single-selection dropdowns")
+    assert(type(cfg.Values)=="table" and (cfg.Multi or #cfg.Values>0),"Dropdown requires Values")
     for _,value in ipairs(cfg.Values) do assert(type(value)=="string","Dropdown Values must be strings") end
-    local value=defaultOf(cfg,cfg.Values[1]); assert(table.find(cfg.Values,value),"Dropdown default must be in Values")
-    return bindControl(self,cfg,dropdown(self._card,controlName(cfg),title,cfg.Values,value,cfg.FullWidth))
+    local value=defaultOf(cfg,cfg.Multi and {} or cfg.Values[1]); assert(cfg.Multi or table.find(cfg.Values,value),"Dropdown default must be in Values")
+    return bindControl(self,cfg,dropdown(self._card,controlName(cfg),title,cfg.Values,value,cfg.FullWidth,cfg.Multi,cfg.Placeholder))
 end
 function SectionMethods:Slider(cfg)
     local title=titleOf(cfg); local min,max=cfg.Min or 0,cfg.Max or 100
@@ -1050,7 +1109,7 @@ function Window:Tab(cfg)
     end
     return tab
 end
-function Window:GetValue(flag) return gui:GetAttribute(flag) end
+function Window:GetValue(flag) local r=controls[flag]; if r and r.Get then return r.Get() end; return gui:GetAttribute(flag) end
 local configPanel
 function Window:ConfigPanel(tab,options)
     assert(not configPanel,"ConfigPanel already exists")
@@ -1108,7 +1167,7 @@ function Window:ConfigPanel(tab,options)
             local r=controls[flag]
             if r and r.save and r.Set then
                 local valid=r.kind=="toggle" and type(value)=="boolean"
-                    or (r.kind=="select" or r.kind=="selectFull") and table.find(r.options,value)~=nil
+                    or (r.kind=="select" or r.kind=="selectFull") and (r.multi and r.Validate(value) or not r.multi and table.find(r.options,value)~=nil)
                     or r.kind=="slider" and type(value)=="number" and value==value and math.abs(value)<math.huge and value>=r.min and value<=r.max
                     or r.kind=="input" and type(value)=="string" and #value<=r.maxLength
                 assert(valid,"Invalid value for "..tostring(flag))
