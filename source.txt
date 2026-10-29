@@ -28,6 +28,7 @@ local LUCIDE = {
     ["info"] = {16898673523,256,256,257,257},
     ["copy"] = {16898619423,256,256,257,514},
     ["gamepad-2"] = {16898672166,256,256,0,0},
+    ["settings"] = {16898734421,256,256,514,0},
 }
 local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
@@ -35,7 +36,7 @@ local Tween=game:GetService("TweenService")
 local ContentProvider=game:GetService("ContentProvider")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.0.0"}
+local Limbo={Version="1.1.0"}
 local currentWindow
 function Limbo:PromptKey(config)
     config=config or {}
@@ -366,8 +367,8 @@ local function card(pageName,mode,name,heading,description,iconName,column)
     local f=box(content,name,C.card); f.BackgroundTransparency=.12; corner(f,12); border(f,.6)
     make("UIGradient",{Color=ColorSequence.new(Color3.new(1,1,1),Color3.fromRGB(238,242,250)),Rotation=80},f)
     local head=button(f,"Collapse"); head.Size=UDim2.new(1,0,0,54)
-    local ico=icon(head,iconName,24,C.blue); ico.Position=UDim2.fromOffset(18,16)
-    local caption=text(head,"Title",heading,19,C.text,true); caption.Position=UDim2.fromOffset(58,11); caption.Size=UDim2.new(1,-100,0,33)
+    if iconName~=false then local ico=icon(head,iconName,24,C.blue); ico.Position=UDim2.fromOffset(18,16) end
+    local caption=text(head,"Title",heading,19,C.text,true); caption.Position=UDim2.fromOffset(iconName==false and 18 or 58,11); caption.Size=UDim2.new(1,iconName==false and -60 or -100,0,33)
     local separator=box(f,"Divider",C.border); separator.BackgroundTransparency=.7; separator.Position=UDim2.fromOffset(18,54); separator.Size=UDim2.new(1,-36,0,1)
     local arrow=icon(head,"chevron-down",16,C.muted); arrow.Name="Chevron"; arrow.Position=UDim2.new(1,-34,0,21); arrow.Rotation=180
     local body=box(f,"Body"); body.BackgroundTransparency=1; body.Position=UDim2.fromOffset(0,60)
@@ -413,6 +414,13 @@ local function dropdown(c,name,caption,options,default,full)
         assert(table.find(options,value),"Dropdown value is not in Values")
         captionLabel.Text=value; gui:SetAttribute(name,value)
     end
+    r.options=options
+    r.Refresh=function(values)
+        assert(type(values)=="table","Dropdown values must be a table")
+        for _,value in ipairs(values) do assert(type(value)=="string","Dropdown values must be strings") end
+        closeDropdown(); options=#values>0 and table.clone(values) or {"None"}; r.options=options
+        if not table.find(options,gui:GetAttribute(name)) then r.Set(options[1]) end
+    end
     b.Activated:Connect(function()
         if openMenu and openMenu:GetAttribute("Owner")==name then closeDropdown(); return end
         closeDropdown()
@@ -455,8 +463,7 @@ local function dropdown(c,name,caption,options,default,full)
     end)
     return r
 end
-local function action(c,name,caption,iconName,primary)
-    local r=row(c,"action",name,caption)
+local function actionButton(r,caption,iconName,primary)
     local b=button(r.frame,"Button"); b.Position=UDim2.fromOffset(0,4); b.Size=UDim2.new(1,0,1,-8); b.BackgroundTransparency=0; b.BackgroundColor3=primary and C.selected or C.hover; border(b,primary and .25 or .7); hover(b)
     if iconName~=false then local ico=icon(b,iconName or "zap",18,primary and C.blue or C.muted); ico.Position=UDim2.fromOffset(14,10) end
     local captionLabel=text(b,"Label",caption,16,primary and C.blue or C.text,true)
@@ -468,6 +475,9 @@ local function action(c,name,caption,iconName,primary)
             if not ok then warn("[LimboUI Callback] "..tostring(err)) end
         else feedback(caption.." - UI preview") end
     end); return r
+end
+local function action(c,name,caption,iconName,primary)
+    return actionButton(row(c,"action",name,caption),caption,iconName,primary)
 end
 local sliders={}
 local bindSlider
@@ -489,6 +499,7 @@ local function slider(c,name,caption,default,maxValue,minValue)
         fill.Size=UDim2.new(fraction,0,0,4); knob.Position=UDim2.fromScale(fraction,.5)
     end
     r.Set=set
+    r.min=minValue; r.max=maxValue
     set(initial(name,default)); input.FocusLost:Connect(function() set(tonumber(input.Text) or minValue) end)
     table.insert(sliders,{hit=hit,rail=rail,set=set,max=maxValue,min=minValue}); bindSlider(sliders[#sliders]); return r
 end
@@ -551,10 +562,15 @@ local function rowHeight(r,width)
         return math.max(58,r.headingHeight+r.detailHeight+(r.headingHeight>0 and r.detailHeight>0 and 6 or 0)+36)
     end
     if r.kind=="action" then return 46 end
+    if r.kind=="actions" then return 46 end
+    if r.kind=="input" then return r.multiline and 150 or 78 end
     return 42
 end
 local function arrangeRow(r,width)
-    if r.kind=="note" then
+    if r.kind=="actions" then
+        local buttonWidth=(width-(#r.buttons-1)*8)/#r.buttons
+        for i,child in ipairs(r.buttons) do place(child,(i-1)*(buttonWidth+8),0,buttonWidth,46) end
+    elseif r.kind=="note" then
         local y=12+r.headingHeight+(r.headingHeight>0 and r.detailHeight>0 and 6 or 0)
         place(r.panel,0,6,width,r.frame.Size.Y.Offset-12)
         place(r.label,40,12,width-54,r.headingHeight)
@@ -882,10 +898,12 @@ local function bindControl(section,cfg,r)
     r.tab=section._rowTab
     local name=r.name
     controls[name]=r
+    r.save=cfg.Save~=false
     local handle={Instance=r.frame,Flag=name}
     function handle:Set(value) assert(r.Set,"This control has no value"); r.Set(value) end
     function handle:Get() return gui:GetAttribute(name) end
     handle.SetValue=handle.Set
+    if r.Refresh then function handle:Refresh(values) r.Refresh(values) end end
     setmetatable(handle,{__index=function(_,key) if key=="Value" then return gui:GetAttribute(name) end end})
     if cfg.Callback and r.kind~="action" then
         assert(type(cfg.Callback)=="function","Callback must be a function")
@@ -924,6 +942,33 @@ function SectionMethods:Button(cfg)
     assert(cfg.Callback==nil or type(cfg.Callback)=="function","Callback must be a function")
     local r=action(self._card,controlName(cfg),title,cfg.Icon==nil and "zap" or cfg.Icon,cfg.Primary)
     r.Callback=cfg.Callback
+    return bindControl(self,cfg,r)
+end
+function SectionMethods:ButtonRow(cfg)
+    assert(type(cfg.Buttons)=="table" and #cfg.Buttons>0 and #cfg.Buttons<=3,"ButtonRow requires 1 to 3 buttons")
+    local titles={}; for _,item in ipairs(cfg.Buttons) do table.insert(titles,titleOf(item)); assert(type(item.Callback)=="function","Button callback is required") end
+    local r=row(self._card,"actions",cfg.Name or table.concat(titles,""),table.concat(titles," / ")); r.tab=self._rowTab; r.buttons={}
+    for i,item in ipairs(cfg.Buttons) do
+        local f=box(r.frame,"Action"..i); f.BackgroundTransparency=1
+        actionButton({frame=f,Callback=item.Callback},item.Title,false,item.Primary)
+        table.insert(r.buttons,f)
+    end
+    return {Instance=r.frame}
+end
+function SectionMethods:Input(cfg)
+    local title=titleOf(cfg); local name=controlName(cfg); local value=defaultOf(cfg,"")
+    assert(type(value)=="string","Input Value must be a string")
+    local r=row(self._card,"input",name,title); r.multiline=cfg.MultiLine==true; r.maxLength=cfg.MaxLength or 256
+    local caption=text(r.frame,"Label",title,15,C.muted); place(caption,2,2,1,23); caption.Size=UDim2.new(1,-4,0,23)
+    local input=make("TextBox",{Name="Input",Text="",PlaceholderText=cfg.Placeholder or "Enter text...",ClearTextOnFocus=false,FontFace=FONT_BODY,TextSize=15,TextColor3=C.text,PlaceholderColor3=C.faint,BackgroundColor3=C.field,BorderSizePixel=0,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=r.multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,TextWrapped=r.multiline,MultiLine=r.multiline,Position=UDim2.fromOffset(0,30),Size=UDim2.new(1,0,0,r.multiline and 110 or 38)},r.frame)
+    corner(input,9); border(input,.6)
+    make("UIPadding",{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,12),PaddingTop=UDim.new(0,r.multiline and 8 or 0)},input)
+    r.Set=function(textValue)
+        assert(type(textValue)=="string" and #textValue<=r.maxLength,"Invalid input value")
+        input.Text=textValue; gui:SetAttribute(name,textValue)
+    end
+    r.Set(value)
+    input.FocusLost:Connect(function() r.Set(input.Text:sub(1,r.maxLength)) end)
     return bindControl(self,cfg,r)
 end
 function SectionMethods:Paragraph(cfg)
@@ -995,7 +1040,7 @@ function Window:Tab(cfg)
         local mode=sectionConfig.Mode
         assert(mode==nil or mode=="Steal" or mode=="Manage","Mode must be Steal or Manage")
         local column=sectionConfig.Column or 1; assert(column==1 or column==2,"Column must be 1 or 2")
-        local iconName=sectionConfig.Icon or "workflow"; assert(LUCIDE[iconName],"Unknown section icon")
+        local iconName=sectionConfig.Icon==nil and "workflow" or sectionConfig.Icon; assert(iconName==false or LUCIDE[iconName],"Unknown section icon")
         local name=sectionConfig.Name or heading:gsub("[^%w_]","").."Card"
         assert(not content:FindFirstChild(name),"Duplicate section name: "..name)
         local c=card(tab.Title,mode,name,heading,"",iconName,column)
@@ -1006,6 +1051,134 @@ function Window:Tab(cfg)
     return tab
 end
 function Window:GetValue(flag) return gui:GetAttribute(flag) end
+local configPanel
+function Window:ConfigPanel(tab,options)
+    assert(not configPanel,"ConfigPanel already exists")
+    options=options or {}
+    local folder=options.Folder or ("LimboHUB/Configs/"..string.format("%.0f",game.PlaceId))
+    assert(type(folder)=="string" and folder:match("^[%w_/-]+$") and not folder:find("//",1,true) and folder:sub(1,1)~="/","Invalid config folder")
+    local Http=game:GetService("HttpService")
+    local current,autoload="None","None"
+    local section=tab:Section({Title="Config Manager",Name="ConfigManagerCard",Icon=false,Column=2})
+    local tabs=section:Tabs({Name="ConfigTabs",Values={"Profiles","Import / Export"},Value="Profiles"})
+    local profiles=tabs:Tab("Profiles")
+    local externalSection=tabs:Tab("Import / Export")
+    local status=profiles:Paragraph({Title="Profiles",Flag="ConfigStatus",Content="Current: None | Autoload: None",Save=false})
+    local name=profiles:Input({Title="Config Name",Flag="ConfigName",Placeholder="My config",MaxLength=48,Save=false})
+    local selection=profiles:Dropdown({Title="Saved Configs",Flag="SelectedConfig",Values={"None"},Value="None",Save=false,Callback=function(value) if value~="None" then name:Set(value) end end})
+    local external=externalSection:Input({Title="Config JSON",Flag="ConfigJSON",MultiLine=true,MaxLength=65536,Placeholder="Paste exported config JSON here...",Save=false})
+    local function notice(message) feedback(message) end
+    local function updateStatus()
+        status.Instance.Panel.Detail.Text="Current: "..current.." | Autoload: "..autoload
+        layout()
+    end
+    local function validName(value)
+        assert(type(value)=="string" and #value>=1 and #value<=48 and value:match("^[%w_-]+$") and value~="None","Use 1-48 letters, numbers, underscores or hyphens for a config name.")
+        return value
+    end
+    local function file(nameValue) return folder.."/"..validName(nameValue)..".json" end
+    local function ensureFolder()
+        assert(type(makefolder)=="function","File storage is unavailable in this executor.")
+        local path=""
+        for part in folder:gmatch("[^/]+") do path=path=="" and part or path.."/"..part; pcall(makefolder,path) end
+    end
+    local function refresh()
+        local names={}
+        if type(listfiles)=="function" then
+            local ok,files=pcall(listfiles,folder)
+            if ok and type(files)=="table" then
+                for _,path in ipairs(files) do
+                    local value=type(path)=="string" and path:gsub("\\","/"):match("/([%w_-]+)%.json$")
+                    if value and value~="None" and #value<=48 then table.insert(names,value) end
+                end
+            end
+        end
+        table.sort(names); selection:Refresh(names)
+        return names
+    end
+    local function collect()
+        local values={}
+        for flag,r in pairs(controls) do if r.save and (r.kind=="toggle" or r.kind=="select" or r.kind=="selectFull" or r.kind=="slider" or r.kind=="input") then values[flag]=gui:GetAttribute(flag) end end
+        return {Version=1,Values=values}
+    end
+    local function apply(data)
+        assert(type(data)=="table" and data.Version==1 and type(data.Values)=="table","Invalid config format.")
+        local changes={}
+        for flag,value in pairs(data.Values) do
+            local r=controls[flag]
+            if r and r.save and r.Set then
+                local valid=r.kind=="toggle" and type(value)=="boolean"
+                    or (r.kind=="select" or r.kind=="selectFull") and table.find(r.options,value)~=nil
+                    or r.kind=="slider" and type(value)=="number" and value==value and math.abs(value)<math.huge and value>=r.min and value<=r.max
+                    or r.kind=="input" and type(value)=="string" and #value<=r.maxLength
+                assert(valid,"Invalid value for "..tostring(flag))
+                table.insert(changes,{r,value})
+            end
+        end
+        assert(#changes>0,"No compatible controls were found in this config.")
+        for _,change in ipairs(changes) do change[1].Set(change[2]) end
+        return #changes
+    end
+    local function decode(raw)
+        assert(type(raw)=="string" and #raw>0 and #raw<=65536,"Config JSON is empty or too large.")
+        return Http:JSONDecode(raw)
+    end
+    local function guarded(fn)
+        return function(...)
+            local ok,result=pcall(fn,...)
+            if not ok then notice(tostring(result):gsub("^.-:%d+: ","")) end
+            return ok,result
+        end
+    end
+    local function target() local value=name:Get(); if value=="" then value=selection:Get() end; return validName(value) end
+    local save=guarded(function(value)
+        value=validName(value or target()); ensureFolder(); assert(type(writefile)=="function","File storage is unavailable.")
+        writefile(file(value),Http:JSONEncode(collect())); current=value; refresh(); selection:Set(value); updateStatus(); notice("Config saved: "..value)
+    end)
+    local load=guarded(function(value)
+        value=validName(value or target()); assert(type(readfile)=="function","File storage is unavailable.")
+        apply(decode(readfile(file(value)))); current=value; updateStatus(); notice("Config loaded: "..value)
+    end)
+    local delete=guarded(function(value)
+        value=validName(value or target()); assert(type(delfile)=="function","File deletion is unavailable.")
+        delfile(file(value)); if current==value then current="None" end
+        if autoload==value then assert(type(writefile)=="function","File storage is unavailable."); writefile(folder.."/Autoload.txt",""); autoload="None" end
+        name:Set(""); refresh(); updateStatus(); notice("Config deleted: "..value)
+    end)
+    local setAutoload=guarded(function()
+        local value=target(); assert(type(readfile)=="function" and type(writefile)=="function","File storage is unavailable.")
+        decode(readfile(file(value))); ensureFolder(); writefile(folder.."/Autoload.txt",value); autoload=value; updateStatus(); notice("Autoload set: "..value)
+    end)
+    local clearAutoload=guarded(function()
+        ensureFolder(); assert(type(writefile)=="function","File storage is unavailable."); writefile(folder.."/Autoload.txt",""); autoload="None"; updateStatus(); notice("Autoload cleared.")
+    end)
+    profiles:ButtonRow({Name="ConfigSaveLoad",Buttons={{Title="Save Config",Primary=true,Callback=function() save() end},{Title="Load Config",Callback=function() load() end}}})
+    profiles:ButtonRow({Name="ConfigDeleteRefresh",Buttons={{Title="Delete Config",Callback=function() delete() end},{Title="Refresh List",Callback=function() refresh(); notice("Config list refreshed.") end}}})
+    profiles:ButtonRow({Name="ConfigAutoload",Buttons={{Title="Set Autoload",Callback=setAutoload},{Title="Clear Autoload",Callback=clearAutoload}}})
+    externalSection:ButtonRow({Name="ConfigTransfer",Buttons={
+        {Title="Export Config",Callback=guarded(function()
+            local raw=Http:JSONEncode(collect()); local copy=setclipboard or toclipboard
+            if type(copy)=="function" and pcall(copy,raw) then notice("Config copied to clipboard.") else external:Set(raw); notice("Config JSON placed in the input.") end
+        end)},
+        {Title="Import Config",Callback=guarded(function() apply(decode(external:Get())); notice("Config imported.") end)},
+    }})
+    configPanel={Name=name,Selection=selection,External=external,Save=save,Load=load,Delete=delete,Refresh=refresh,SetAutoload=setAutoload,ClearAutoload=clearAutoload}
+    function configPanel:Autoload()
+        if self.tried then return end; self.tried=true
+        if type(readfile)~="function" then return end
+        local ok,value=pcall(readfile,folder.."/Autoload.txt")
+        if ok and type(value)=="string" and value~="" then
+            local valid=pcall(validName,value)
+            if valid then autoload=value; updateStatus(); load(value) end
+        end
+    end
+    function Window:SaveConfig(value) return save(value) end
+    function Window:LoadConfig(value) return load(value) end
+    function Window:DeleteConfig(value) return delete(value) end
+    function Window:GetConfigs() return refresh() end
+    refresh()
+    return configPanel
+end
 function Window:Notify(cfg)
     assert(type(cfg)=="table" and type(cfg.Content)=="string","Notify requires Content")
     feedback(cfg.Content,type(cfg.Duration)=="number" and math.clamp(cfg.Duration,.1,60) or 3)
@@ -1015,6 +1188,7 @@ function Window:Show()
     assert(#navItems>0,"Create at least one tab before Show")
     if not pageNames[activePage] then activePage=navItems[1][1] end
     rebuildFeatureIndex(); ready=true; show(true); layout()
+    if configPanel then configPanel:Autoload() end
     return self
 end
 function Window:Hide() show(false) end
