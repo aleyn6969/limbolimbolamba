@@ -37,10 +37,11 @@ local ContentProvider=game:GetService("ContentProvider")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
 local Limbo={Version="1.1.0"}
+assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
     config=config or {}
-    local parent=Players.LocalPlayer:WaitForChild("PlayerGui")
+    local parent=gethui()
     for _,name in ipairs({"LimboHubAccessUI","LimboHubReferenceUI"}) do local old=parent:FindFirstChild(name); if old and (name~="LimboHubReferenceUI" or not config.KeepWindow) then old:Destroy() end end
     local accent=config.Accent or Color3.fromRGB(117,181,255)
     local screen=Instance.new("ScreenGui"); screen.Name="LimboHubAccessUI"; screen.ResetOnSpawn=false; screen.DisplayOrder=100; screen.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; screen.Parent=parent
@@ -111,7 +112,7 @@ config=config or {}
 assert(type(config)=="table","Window configuration must be a table")
 local player=Players.LocalPlayer
 assert(player,"Limbo Hub must run on the client")
-local parent=player:WaitForChild("PlayerGui")
+local parent=gethui()
 local previous=parent:FindFirstChild("LimboHubReferenceUI")
 local saved=previous and previous:GetAttributes() or {}
 if previous then previous:Destroy() end
