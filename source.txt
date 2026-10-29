@@ -32,10 +32,9 @@ local LUCIDE = {
 }
 local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
-local Tween=game:GetService("TweenService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.2.0",SupportsMultiSelect=true}
+local Limbo={Version="1.3.0",SupportsMultiSelect=true}
 assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
@@ -126,9 +125,11 @@ local FONT_BODY=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontW
 local FONT_STRONG=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontWeight.ExtraBold)
 local fontScale=1
 local textRuns=setmetatable({},{__mode="k"})
+local lastRasterScale
 local function rasterText(obj,designSize)
     local screenPixels=math.max(1,math.floor(designSize*fontScale+.5))
-    obj.TextSize=math.max(1,math.floor(screenPixels/fontScale+.5))
+    local size=math.max(1,math.floor(screenPixels/fontScale+.5))
+    if obj.TextSize~=size then obj.TextSize=size end
 end
 local function make(class,props,target)
     local obj=Instance.new(class)
@@ -167,7 +168,7 @@ gui:SetAttribute("UserZoom",type(saved.UserZoom)=="number" and math.clamp(saved.
 local connections={}
 local function track(c) table.insert(connections,c); return c end
 local function animate(obj,props,duration)
-    local t=Tween:Create(obj,TweenInfo.new(gui:GetAttribute("ReduceMotion") and 0 or (duration or .18),Enum.EasingStyle.Quad,Enum.EasingDirection.Out),props); t:Play(); return t
+    for key,value in pairs(props) do if obj[key]~=value then obj[key]=value end end
 end
 local function hover(b)
     local overlay=box(b,"Hover",C.blue); overlay.Size=UDim2.fromScale(1,1); overlay.BackgroundTransparency=1; corner(overlay,10)
@@ -238,14 +239,23 @@ local function updateFooter()
     footerStatus.Text=string.format("%s   |   %s   |   %s FPS",GAME_NAME,executorTitle,tostring(fpsValue))
 end
 updateFooter()
-local frameCount,frameTime=0,0
-track(RunService.RenderStepped:Connect(function(dt)
-    frameCount+=1; frameTime+=dt
-    if frameTime>=1 then
-        fpsValue=math.floor(frameCount/frameTime+.5); updateFooter()
-        frameCount,frameTime=0,0
+local fpsWorker=task.spawn(function()
+    while gui.Parent do
+        task.wait(1)
+        if gui.Parent and gui.Enabled and root.Visible then
+            local elapsed,samples=0,0
+            for _=1,8 do
+                if not gui.Parent or not gui.Enabled or not root.Visible then break end
+                elapsed+=RunService.RenderStepped:Wait()
+                samples+=1
+            end
+            if gui.Parent and elapsed>0 and gui.Enabled and root.Visible then
+                local nextFps=math.floor(samples/elapsed+.5)
+                if nextFps~=fpsValue then fpsValue=nextFps; updateFooter() end
+            end
+        end
     end
-end))
+end)
 local zoomControls
 local toast=box(overlay,"Toast",C.card); toast.Visible=false; toast.ZIndex=200; corner(toast,14); border(toast,.3)
 toast.AnchorPoint=Vector2.new(1,1); toast.Position=UDim2.new(1,-16,1,-40); toast.Size=UDim2.fromOffset(360,84); toast.AutomaticSize=Enum.AutomaticSize.Y
@@ -322,7 +332,23 @@ searchDismiss.Activated:Connect(function() search:ReleaseFocus(); closeFeatureSe
 local cards,navButtons={},{}
 local navItems,pageNames,controls={},{},{}
 local ready=false
-local layout,closeDropdown
+local layout,closeDropdown,performLayout
+local layoutQueued,layoutRunning,layoutAgain=false,false,false
+layout=function()
+    if not ready or not gui.Parent then return end
+    if layoutRunning then layoutAgain=true; return end
+    if layoutQueued then return end
+    layoutQueued=true
+    task.defer(function()
+        layoutQueued=false
+        if not gui.Parent then return end
+        layoutRunning=true
+        local ok,err=pcall(performLayout)
+        layoutRunning=false
+        if not ok then warn("[LimboUI Layout] "..tostring(err)) end
+        if layoutAgain then layoutAgain=false; layout() end
+    end)
+end
 local activePage=config.DefaultTab or saved.ActivePage or "Eggs"
 local activeMode=saved.Mode=="Manage" and "Manage" or "Steal"
 local sidebarCollapsed=saved.SidebarCollapsed==true
@@ -412,6 +438,9 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
     local captionLabel=text(b,"Value",value,16,C.text); captionLabel.Position=UDim2.fromOffset(12,0); captionLabel.Size=UDim2.new(1,-45,1,0); captionLabel.TextTruncate=Enum.TextTruncate.AtEnd
     local arrow=icon(b,"chevron-down",15,C.muted); arrow.Position=UDim2.new(1,-28,.5,-7.5)
     local optionRows={}
+    local ownerMenu
+    local optionSet={}
+    for _,option in ipairs(options) do optionSet[option]=true end
     local Http=multi and game:GetService("HttpService")
     local function selectionOf(value,allowMissing)
         if type(value)=="string" then local ok,decoded=pcall(Http.JSONDecode,Http,value); if not ok then return nil end; value=decoded end
@@ -419,10 +448,10 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
         local selected,seen={},{}
         for key,item in pairs(value) do
             if type(key)~="number" or key%1~=0 or key<1 or key>#value or type(item)~="string" then return nil end
-            if not allowMissing and not table.find(options,item) then return nil end
+            if not allowMissing and not optionSet[item] then return nil end
         end
         for _,item in ipairs(value) do
-            if table.find(options,item) and not seen[item] then table.insert(selected,item); seen[item]=true end
+            if optionSet[item] and not seen[item] then table.insert(selected,item); seen[item]=true end
         end
         return selected
     end
@@ -457,6 +486,7 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
         for _,value in ipairs(values) do assert(type(value)=="string","Dropdown values must be strings") end
         closeDropdown(); local selected=multi and r.Get()
         options=(multi or #values>0) and table.clone(values) or {"None"}; r.options=options; optionRows={}
+        optionSet={}; for _,option in ipairs(options) do optionSet[option]=true end
         if multi then r.Set(selectionOf(selected,true))
         elseif not table.find(options,gui:GetAttribute(name)) then r.Set(options[1]) end
     end
@@ -479,11 +509,66 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
         local noResults=text(list,"NoResults","No results found",14,C.muted); noResults.TextXAlignment=Enum.TextXAlignment.Center; place(noResults,4,0,width-16,44); noResults.Visible=false
         local choices={}
         optionRows={}
+        ownerMenu=menu
+        menu.Destroying:Connect(function() if ownerMenu==menu then optionRows={}; ownerMenu=nil end end)
         if multi then
             local clear=button(list,"ClearSelection"); clear.ZIndex=62; place(clear,0,0,width-8,44); hover(clear)
             local label=text(clear,"Label","Clear selection",14,C.muted); label.Position=UDim2.fromOffset(12,0); label.Size=UDim2.new(1,-24,1,0)
             clear.Activated:Connect(function() r.Set({}) end)
             table.insert(choices,{button=clear,label="",always=true})
+        end
+        if #options>40 then
+            local pool,filtered={},{}
+            local offset=multi and 1 or 0
+            local visibleRows=math.ceil(math.max(44,height-56)/46)+2
+            for index=1,visibleRows do
+                local choice=button(list,"Option"..index); choice.ZIndex=62; hover(choice)
+                local caption=text(choice,"Label","",14,C.text); caption.Position=UDim2.fromOffset(12,0); caption.Size=UDim2.new(1,-44,1,0)
+                local check=icon(choice,"check",16,C.blue); check.Position=UDim2.new(1,-28,.5,-8)
+                local item={button=choice,label=caption,check=check}
+                pool[index]=item
+                choice.Activated:Connect(function()
+                    local option=item.option; if not option then return end
+                    if multi then
+                        local selected=r.Get(); local found=table.find(selected,option)
+                        if found then table.remove(selected,found) else table.insert(selected,option) end
+                        r.Set(selected)
+                    else r.Set(option); closeDropdown() end
+                end)
+            end
+            local function renderOptions()
+                optionRows={}
+                local first=math.max(1,math.floor(list.CanvasPosition.Y/46)+1-offset)
+                local selected=multi and r.Get()
+                for index,item in ipairs(pool) do
+                    local position=first+index-1
+                    local option=filtered[position]
+                    item.option=option; item.button.Visible=option~=nil
+                    if option then
+                        place(item.button,0,(position-1+offset)*46,width-8,44)
+                        item.label.Text=option
+                        local on=multi and table.find(selected,option)~=nil or not multi and option==captionLabel.Text
+                        item.label.TextColor3=on and C.blue or C.text; item.check.Visible=on
+                        optionRows[option]=item
+                    end
+                end
+            end
+            local function searchOptions()
+                local query=string.match(string.lower(popupSearch.Text),"^%s*(.-)%s*$")
+                filtered={}
+                for _,option in ipairs(options) do
+                    if query=="" or string.find(string.lower(option),query,1,true) then table.insert(filtered,option) end
+                end
+                list.CanvasSize=UDim2.fromOffset(0,math.max(44,(#filtered+offset)*46)+(multi and #filtered==0 and 44 or 0))
+                list.CanvasPosition=Vector2.zero
+                noResults.Position=UDim2.fromOffset(4,offset*46); noResults.Visible=#filtered==0
+                renderOptions()
+            end
+            list:GetPropertyChangedSignal("CanvasPosition"):Connect(renderOptions)
+            popupSearch:GetPropertyChangedSignal("Text"):Connect(searchOptions)
+            searchOptions()
+            if not Input.TouchEnabled then popupSearch:CaptureFocus() end
+            return
         end
         local selected=multi and r.Get()
         for i,opt in ipairs(options) do
@@ -612,13 +697,18 @@ local function rowHeight(r,width)
     if r.kind=="selectFull" then return 74 end
     if r.kind=="slider" then return 94 end
     if r.kind=="note" then
+        local measured=r.measurement
+        if measured and measured.width==width and measured.scale==scaleFactor
+            and measured.title==r.label.Text and measured.content==r.detail.Text then return measured.height end
         rasterText(r.label,18); rasterText(r.detail,15)
         local bounds=Vector2.new(math.max(1,math.floor((width-54)*scaleFactor)-2),100000)
         local headingSize=math.max(1,math.floor(r.label.TextSize*scaleFactor+.5))
         local detailSize=math.max(1,math.floor(r.detail.TextSize*scaleFactor+.5))
         r.headingHeight=r.label.Text~="" and math.ceil(TextService:GetTextSize(r.label.Text,headingSize,Enum.Font.BuilderSansExtraBold,bounds).Y/scaleFactor)+2 or 0
         r.detailHeight=r.detail.Text~="" and math.ceil(TextService:GetTextSize(r.detail.Text,detailSize,Enum.Font.BuilderSansBold,bounds).Y/scaleFactor)+2 or 0
-        return math.max(58,r.headingHeight+r.detailHeight+(r.headingHeight>0 and r.detailHeight>0 and 6 or 0)+36)
+        local height=math.max(58,r.headingHeight+r.detailHeight+(r.headingHeight>0 and r.detailHeight>0 and 6 or 0)+36)
+        r.measurement={width=width,scale=scaleFactor,title=r.label.Text,content=r.detail.Text,height=height}
+        return height
     end
     if r.kind=="action" then return 46 end
     if r.kind=="actions" then return 46 end
@@ -658,7 +748,7 @@ local function arrangeRow(r,width)
         end
     end
 end
-layout=function()
+performLayout=function()
     if not gui.Parent or not ready then return end
     local view=canvas.AbsoluteSize; if view.X<1 or view.Y<1 then return end
     overlay.AnchorPoint=canvas.AnchorPoint; overlay.Position=canvas.Position; overlay.Size=canvas.Size
@@ -723,13 +813,19 @@ layout=function()
     local innerWidth=mainWidth-7
     local cardWidth=(innerWidth-gap)/2
     local heights={0,0}
+    local buildStarted=os.clock()
     for _,c in ipairs(cards) do
         local relevant=c.page==activePage and (c.mode==nil or c.mode==activeMode)
         local shown={}
         if relevant then
             for _,r in ipairs(c.rows) do
                 local show=not r.tab or r.tab==c.activeTab
-                r.frame.Visible=show; if show then table.insert(shown,r) end
+                if show and root.Visible and not c.collapsed and r.Ensure then
+                    r.Ensure()
+                    if os.clock()-buildStarted>=0.004 then task.wait(); buildStarted=os.clock() end
+                    if not gui.Parent then return end
+                end
+                if r.frame then r.frame.Visible=show; if show then table.insert(shown,r) end end
             end
         end
         local visible=relevant; c.frame.Visible=visible
@@ -753,19 +849,29 @@ layout=function()
     gui:SetAttribute("ActivePage",activePage); gui:SetAttribute("Mode",activeMode)
     gui:SetAttribute("Layout","Compact"); gui:SetAttribute("ColumnCount",columns); gui:SetAttribute("AutoScale",scaleFactor); gui:SetAttribute("AspectRatio",BASE_W/BASE_H)
     fontScale=scaleFactor
-    for obj,designSize in pairs(textRuns) do if obj.Parent then rasterText(obj,designSize) end end
+    if lastRasterScale~=scaleFactor then
+        for obj,designSize in pairs(textRuns) do if obj.Parent then rasterText(obj,designSize) end end
+        lastRasterScale=scaleFactor
+    end
 end
 local function openFeature(c,r)
+    if r.Ensure then r.Ensure() end
     closeDropdown(); search:ReleaseFocus()
     activePage=c.page
     if c.mode then activeMode=c.mode end
     if r.tab then c.activeTab=r.tab end
     c.collapsed=false; c.frame:SetAttribute("Collapsed",false)
     search.Text=""; layout()
-    local targetY=c.frame.Position.Y.Offset+c.body.Position.Y.Offset+r.frame.Position.Y.Offset
-    content.CanvasPosition=Vector2.new(0,math.clamp(targetY-32,0,math.max(0,content.CanvasSize.Y.Offset-content.Size.Y.Offset)))
     task.defer(function()
-        if not gui.Parent or not panEnabled then return end
+        while gui.Parent and (layoutQueued or layoutRunning) do task.wait() end
+        if not gui.Parent or activePage~=c.page or not r.frame.Parent then return end
+        local targetY=c.frame.Position.Y.Offset+c.body.Position.Y.Offset+r.frame.Position.Y.Offset
+        content.CanvasPosition=Vector2.new(0,math.clamp(targetY-32,0,math.max(0,content.CanvasSize.Y.Offset-content.Size.Y.Offset)))
+        local previousHighlight=r.frame:FindFirstChild("SearchHighlight"); if previousHighlight then previousHighlight:Destroy() end
+        corner(r.frame,9)
+        local highlight=border(r.frame,0); highlight.Name="SearchHighlight"; highlight.Color=C.blue
+        task.delay(1.25,function() if highlight.Parent then highlight:Destroy() end end)
+        if not panEnabled then return end
         local p=r.frame.AbsolutePosition-canvas.AbsolutePosition+canvas.CanvasPosition
         local size=r.frame.AbsoluteSize; local view=canvas.AbsoluteSize; local nextPan=canvas.CanvasPosition
         local x,y=nextPan.X,nextPan.Y
@@ -773,11 +879,6 @@ local function openFeature(c,r)
         if p.Y<y+12 then y=p.Y-12 elseif p.Y+size.Y>y+view.Y-72 then y=p.Y+size.Y-view.Y+72 end
         canvas.CanvasPosition=Vector2.new(math.clamp(x,0,math.max(0,panArea.X-view.X)),math.clamp(y,0,math.max(0,panArea.Y-view.Y)))
     end)
-    local previousHighlight=r.frame:FindFirstChild("SearchHighlight"); if previousHighlight then previousHighlight:Destroy() end
-    corner(r.frame,9)
-    local highlight=border(r.frame,0); highlight.Name="SearchHighlight"; highlight.Color=C.blue
-    animate(highlight,{Transparency=1},1.2)
-    task.delay(1.25,function() if highlight.Parent then highlight:Destroy() end end)
 end
 local featureIndex,resultPool={},{}
 local function rebuildFeatureIndex()
@@ -958,13 +1059,16 @@ local function bindControl(section,cfg,r)
     local name=r.name
     controls[name]=r
     r.save=cfg.Save~=false
-    local handle={Instance=r.frame,Flag=name}
+    local handle={Flag=name}
     function handle:Set(value) assert(r.Set,"This control has no value"); r.Set(value) end
     local function readValue() if r.Get then return r.Get() end; return gui:GetAttribute(name) end
     function handle:Get() return readValue() end
     handle.SetValue=handle.Set
     if r.Refresh then function handle:Refresh(values) r.Refresh(values) end end
-    setmetatable(handle,{__index=function(_,key) if key=="Value" then return readValue() end end})
+    setmetatable(handle,{__index=function(_,key)
+        if key=="Value" then return readValue() end
+        if key=="Instance" then if r.Ensure then r.Ensure() end; return r.frame end
+    end})
     if cfg.Callback and r.kind~="action" then
         assert(type(cfg.Callback)=="function","Callback must be a function")
         track(gui:GetAttributeChangedSignal(name):Connect(function()
@@ -1087,6 +1191,93 @@ function SectionMethods:Tabs(cfg)
         return setmetatable({_card=c,_rowTab=name},{__index=SectionMethods})
     end
     return group
+end
+-- Register values immediately; build the visual control only when its section is displayed.
+local function deferControl(section,cfg,kind,factory)
+    local title=titleOf(cfg)
+    assert(cfg.Callback==nil or type(cfg.Callback)=="function","Callback must be a function")
+    local name=controlName(cfg)
+    cfg=table.clone(cfg)
+    local c=section._card
+    local r={kind=kind,name=name,caption=title,card=c,tab=section._rowTab,multi=cfg.Multi==true,
+        min=cfg.Min or 0,max=cfg.Max or 100,maxLength=cfg.MaxLength or 256,options=cfg.Values}
+    local Http=r.multi and game:GetService("HttpService")
+    local function normalize(value,prune)
+        if kind=="toggle" then assert(type(value)=="boolean","Toggle Value must be boolean"); return value end
+        if kind=="slider" then
+            assert(type(value)=="number" and value==value and math.abs(value)<math.huge,"Invalid slider value")
+            return math.floor(math.clamp(value,r.min,r.max))
+        end
+        if kind=="input" then assert(type(value)=="string" and #value<=r.maxLength,"Invalid input value"); return value end
+        if r.multi then
+            if type(value)=="string" then value=Http:JSONDecode(value) end
+            assert(type(value)=="table","Dropdown selections must be a table")
+            local selected,seen={},{}
+            for key,option in pairs(value) do
+                assert(type(key)=="number" and key>=1 and key%1==0 and key<=#value and type(option)=="string","Invalid dropdown selections")
+                assert(prune or table.find(r.options,option),"Dropdown value is not in Values")
+            end
+            for _,option in ipairs(value) do
+                if table.find(r.options,option) and not seen[option] then table.insert(selected,option); seen[option]=true end
+            end
+            return Http:JSONEncode(selected)
+        end
+        assert(table.find(r.options,value),"Dropdown value is not in Values"); return value
+    end
+    if kind=="select" then
+        assert(type(r.options)=="table" and (r.multi or #r.options>0),"Dropdown requires Values")
+        for _,option in ipairs(r.options) do assert(type(option)=="string","Dropdown Values must be strings") end
+        if cfg.FullWidth then r.kind="selectFull" end
+    elseif kind=="slider" then assert(type(r.min)=="number" and type(r.max)=="number" and r.max>r.min,"Invalid slider bounds") end
+    if kind~="action" then
+        local fallback=kind=="toggle" and false or kind=="slider" and r.min or kind=="input" and "" or r.multi and {} or r.options and r.options[1]
+        -- Boolean false must remain a valid default.
+        if kind=="toggle" then fallback=false end
+        local value=normalize(defaultOf(cfg,fallback),false)
+        if saved[name]~=nil then local ok,restored=pcall(normalize,saved[name],true); if ok then value=restored end end
+        gui:SetAttribute(name,value)
+        r.Set=function(nextValue) gui:SetAttribute(name,normalize(nextValue,false)) end
+        if r.multi then
+            r.Get=function() return Http:JSONDecode(gui:GetAttribute(name)) end
+            r.Validate=function(value) return pcall(normalize,value,false) end
+        end
+    end
+    if kind=="select" then
+        r.Refresh=function(values)
+            assert(type(values)=="table","Dropdown values must be a table")
+            for _,option in ipairs(values) do assert(type(option)=="string","Dropdown Values must be strings") end
+            r.options=(r.multi or #values>0) and table.clone(values) or {"None"}
+            cfg.Values=r.options
+            if r.multi then gui:SetAttribute(name,normalize(gui:GetAttribute(name),true))
+            elseif not table.find(r.options,gui:GetAttribute(name)) then r.Set(r.options[1]) end
+        end
+    end
+    table.insert(c.rows,r)
+    r.Ensure=function()
+        local nativeConfig=table.clone(cfg)
+        if kind~="action" then
+            nativeConfig.Callback=nil
+            nativeConfig.Value=r.Get and r.Get() or gui:GetAttribute(name)
+            saved[name]=gui:GetAttribute(name)
+        end
+        controls[name]=nil
+        local ok,native=pcall(factory,section,nativeConfig)
+        if not ok then controls[name]=r; error(native,0) end
+        local actual=controls[name]
+        local index=table.find(c.rows,actual)
+        if index then table.remove(c.rows,index) end
+        for key,value in pairs(actual) do r[key]=value end
+        if actual.Refresh then
+            r.Refresh=function(values) actual.Refresh(values); r.options=actual.options end
+        end
+        controls[name]=r
+        r.Ensure=nil
+    end
+    return bindControl(section,cfg,r)
+end
+for name,kind in pairs({Toggle="toggle",Dropdown="select",Slider="slider",Input="input",Button="action"}) do
+    local factory=SectionMethods[name]
+    SectionMethods[name]=function(section,cfg) return deferControl(section,cfg,kind,factory) end
 end
 function Window:Tab(cfg)
     local name=titleOf(cfg)
@@ -1255,7 +1446,10 @@ function Window:Destroy() gui:Destroy() end
 Window.CreateTab=Window.Tab
 Window.AddTab=Window.Tab
 currentWindow=Window
-gui.Destroying:Connect(function() for _,c in ipairs(connections) do c:Disconnect() end end)
+gui.Destroying:Connect(function()
+    for _,c in ipairs(connections) do c:Disconnect() end
+    if fpsWorker then pcall(task.cancel,fpsWorker); fpsWorker=nil end
+end)
 root.Visible=false; canvas.Visible=false
 
 return Window
