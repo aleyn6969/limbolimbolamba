@@ -37,7 +37,7 @@ local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.5.0",SupportsConfigReplay=true,SupportsMultiSelect=true,SupportsSubTabs=true,SupportsTabSubTabs=true}
+local Limbo={Version="1.5.0",SupportsAnnouncements=true,SupportsConfigReplay=true,SupportsMultiSelect=true,SupportsSubTabs=true,SupportsTabSubTabs=true}
 assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
@@ -1511,6 +1511,50 @@ function Window:ConfigPanel(tab,options)
     refresh()
     return configPanel
 end
+function Window:Announce(cfg)
+    assert(type(cfg)=="table" and type(cfg.Name)=="string" and #cfg.Name>0 and #cfg.Name<=128
+        and type(cfg.Message)=="string" and #cfg.Message>0 and #cfg.Message<=1200,"Invalid announcement")
+    if not gui.Parent then return false end
+    if not self._announcementFeed then
+        self._announcementFeed=make("Frame",{Name="Announcements",BackgroundTransparency=1,AnchorPoint=Vector2.new(.5,0),Position=UDim2.new(.5,0,0,52),Size=UDim2.new(1,-24,0,0),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=250},overlay)
+        make("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center},self._announcementFeed)
+        self._announcementItems={}
+        track(overlay:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            for _,item in ipairs(self._announcementItems) do item.fit() end
+        end))
+    end
+    local items=self._announcementItems
+    for _,item in ipairs(items) do if cfg.Id and item.id==cfg.Id then return true end end
+    while #items>=3 do table.remove(items,1).frame:Destroy() end
+    local frame=make("Frame",{Name="Announcement",BackgroundTransparency=1,Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=250},self._announcementFeed)
+    local row=make("Frame",{Name="Line",BackgroundTransparency=1,AnchorPoint=Vector2.new(.5,0),Position=UDim2.fromScale(.5,0),Size=UDim2.fromOffset(0,0),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=250},frame)
+    make("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,VerticalAlignment=Enum.VerticalAlignment.Center,Padding=UDim.new(0,7),SortOrder=Enum.SortOrder.LayoutOrder},row)
+    local sender=make("TextLabel",{Name="Sender",Text=cfg.Name,RichText=false,BackgroundTransparency=1,TextColor3=Color3.fromRGB(52,165,255),TextStrokeColor3=Color3.new(0,0,0),TextStrokeTransparency=0,FontFace=FONT_STRONG,TextTruncate=Enum.TextTruncate.AtEnd,TextXAlignment=Enum.TextXAlignment.Right,LayoutOrder=1,ZIndex=251},row)
+    local badge=make("Frame",{Name="VerifiedBadge",BackgroundColor3=Color3.fromRGB(40,150,255),BorderSizePixel=0,LayoutOrder=2,ZIndex=251},row)
+    corner(badge,3)
+    make("TextLabel",{Name="Check",Text="✓",BackgroundTransparency=1,Size=UDim2.fromScale(1,1),TextColor3=Color3.new(1,1,1),FontFace=FONT_STRONG,TextSize=18,ZIndex=252},badge)
+    local message=make("TextLabel",{Name="Message",Text=cfg.Message,RichText=false,BackgroundTransparency=1,TextColor3=Color3.new(1,1,1),TextStrokeColor3=Color3.new(0,0,0),TextStrokeTransparency=0,FontFace=FONT_STRONG,TextWrapped=true,AutomaticSize=Enum.AutomaticSize.Y,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=3,ZIndex=251},row)
+    local item={id=cfg.Id,frame=frame}
+    item.fit=function()
+        local available=math.max(160,overlay.AbsoluteSize.X-32)
+        local size=available<500 and 18 or 25
+        local nameWidth=math.min(TextService:GetTextSize(cfg.Name,size,Enum.Font.BuilderSansBold,Vector2.new(10000,1000)).X+2,available*.35)
+        local badgeSize=size*.8
+        local textWidth=math.max(70,math.min(TextService:GetTextSize(cfg.Message,size,Enum.Font.BuilderSansBold,Vector2.new(10000,1000)).X+3,available-nameWidth-badgeSize-14))
+        sender.TextSize=size; sender.Size=UDim2.fromOffset(nameWidth,size+8)
+        badge.Size=UDim2.fromOffset(badgeSize,badgeSize); badge.Check.TextSize=math.floor(size*.8)
+        message.TextSize=size; message.Size=UDim2.fromOffset(textWidth,0)
+        row.Size=UDim2.fromOffset(nameWidth+badgeSize+textWidth+14,0)
+    end
+    table.insert(items,item); item.fit()
+    task.delay(8,function()
+        local index=table.find(items,item)
+        if index then table.remove(items,index) end
+        if frame.Parent then frame:Destroy() end
+    end)
+    return true
+end
+
 function Window:Notify(cfg)
     assert(type(cfg)=="table" and type(cfg.Content)=="string","Notify requires Content")
     feedback(cfg.Content,type(cfg.Duration)=="number" and math.clamp(cfg.Duration,.1,60) or 3)
