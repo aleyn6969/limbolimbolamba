@@ -1,5 +1,8 @@
 local LUCIDE = {
     ["egg"] = {117851493400222,0,0,0,0},
+    ["play"] = {135609604299893,0,0,0,0},
+    ["flame"] = {10723376114,0,0,0,0},
+    ["webhook"] = {16898613869,48,48,967,196},
     ["workflow"] = {99186544029189,0,0,0,0},
     ["arrow-up"] = {89282378235317,0,0,0,0},
     ["chart-no-axes-column-increasing"] = {140383830943049,0,0,0,0},
@@ -34,7 +37,7 @@ local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.4.0",SupportsMultiSelect=true,SupportsSubTabs=true}
+local Limbo={Version="1.5.0",SupportsConfigReplay=true,SupportsMultiSelect=true,SupportsSubTabs=true,SupportsTabSubTabs=true}
 assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
@@ -124,6 +127,9 @@ local MODE_TAB=config.ModeTab or "Eggs"
 local MODE_TABS=config.SubTabs or {"Steal","Manage"}
 assert(type(MODE_TABS)=="table" and #MODE_TABS>0,"SubTabs must contain at least one name")
 local MODE_LABELS=config.ModeLabels or {}
+local MODE_GROUPS=table.clone(config.TabSubTabs or {})
+assert(MODE_GROUPS[MODE_TAB]==nil,"Use SubTabs to configure ModeTab")
+MODE_GROUPS[MODE_TAB]=MODE_TABS
 local MODE_WIDTH=(config.SubTabs or config.ModeLabels) and 148 or 116
 local FONT_BODY=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontWeight.Bold)
 local FONT_STRONG=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontWeight.ExtraBold)
@@ -216,13 +222,19 @@ local minimize=button(header,"Minimize"); hover(minimize)
 local minus=icon(minimize,"minus",20,C.muted); minus.Position=UDim2.fromOffset(12,12)
 local modes=make("ScrollingFrame",{Name="ModeBar",BackgroundColor3=C.sidebar,BorderSizePixel=0,ScrollBarThickness=0,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.X,ElasticBehavior=Enum.ElasticBehavior.Never,ClipsDescendants=true},root); corner(modes,12); border(modes,.8)
 local modeIndicator=box(modes,"ActivePill",C.hover); corner(modeIndicator,9)
-local modeButtons={}
-for i,name in ipairs(MODE_TABS) do
-    assert(type(name)=="string" and name:match("%S") and not modeButtons[name],"Subtab names must be nonempty and unique")
-    local b=button(modes,name); hover(b); place(b,4+(i-1)*(MODE_WIDTH+2),4,MODE_WIDTH,44)
-    local caption=text(b,"Label",MODE_LABELS[name] or name,14,C.muted,true); place(caption,8,0,MODE_WIDTH-16,44)
-    caption.TextXAlignment=Enum.TextXAlignment.Center
-    modeButtons[name]=b
+local modeButtons,modeStates={},{}
+for page,names in pairs(MODE_GROUPS) do
+    assert(type(page)=="string" and type(names)=="table" and #names>0,"Each tab requires nonempty SubTabs")
+    local restored=saved["Mode_"..page] or (page==MODE_TAB and saved.Mode)
+    modeStates[page]=table.find(names,restored) and restored or names[1]
+    gui:SetAttribute("Mode_"..page,modeStates[page])
+    for i,name in ipairs(names) do
+        assert(type(name)=="string" and name:match("%S") and not modeButtons[name],"Subtab names must be nonempty and unique")
+        local b=button(modes,name); hover(b); place(b,4+(i-1)*(MODE_WIDTH+2),4,MODE_WIDTH,44)
+        local caption=text(b,"Label",MODE_LABELS[name] or name,14,C.muted,true); place(caption,8,0,MODE_WIDTH-16,44)
+        caption.TextXAlignment=Enum.TextXAlignment.Center
+        modeButtons[name]=b
+    end
 end
 local content=make("ScrollingFrame",{Name="Content",BackgroundTransparency=1,BorderSizePixel=0,CanvasSize=UDim2.new(),ScrollBarThickness=3,ScrollBarImageColor3=C.faint,ScrollingDirection=Enum.ScrollingDirection.Y,ElasticBehavior=Enum.ElasticBehavior.WhenScrollable,ClipsDescendants=true},root)
 local footer=box(root,"Footer"); footer.BackgroundTransparency=1
@@ -356,7 +368,7 @@ layout=function()
     end)
 end
 local activePage=config.DefaultTab or saved.ActivePage or "Eggs"
-local activeMode=modeButtons[saved.Mode] and saved.Mode or MODE_TABS[1]
+local activeMode=modeStates[activePage] or modeStates[MODE_TAB]
 local sidebarCollapsed=saved.SidebarCollapsed==true
 gui:SetAttribute("SidebarCollapsed",sidebarCollapsed)
 local openMenu
@@ -679,7 +691,8 @@ local function note(c,name,caption,detail,cfg)
 end
 
 local function navigate(name)
-    closeDropdown(); activePage=name; gui:SetAttribute("ActivePage",name); search.Text=""; content.CanvasPosition=Vector2.zero; layout()
+    closeDropdown(); activePage=name; activeMode=modeStates[name] or modeStates[MODE_TAB]
+    gui:SetAttribute("ActivePage",name); search.Text=""; content.CanvasPosition=Vector2.zero; layout()
 end
 local function addTabButton(item)
     local i=#navItems
@@ -692,7 +705,10 @@ local function addTabButton(item)
     b.Activated:Connect(function() navigate(item[1]) end)
 end
 local function mode(value)
-    closeDropdown(); activeMode=value; gui:SetAttribute("Mode",value); search.Text=""; content.CanvasPosition=Vector2.zero; layout()
+    if not table.find(MODE_GROUPS[activePage] or {},value) then return end
+    closeDropdown(); activeMode=value; modeStates[activePage]=value
+    gui:SetAttribute("Mode_"..activePage,value); gui:SetAttribute("Mode",value)
+    search.Text=""; content.CanvasPosition=Vector2.zero; layout()
 end
 for name,b in pairs(modeButtons) do b.Activated:Connect(function() mode(name) end) end
 local function rowHeight(r,width)
@@ -807,14 +823,20 @@ performLayout=function()
     place(headerLine,0,72,mainWidth,1)
     place(searchShell,mainWidth-318,19,272,38)
     place(minimize,mainWidth-36,19,36,38); place(minus,8,9,20,20)
-    local modeBarWidth=#MODE_TABS*(MODE_WIDTH+2)+8
-    modes.Visible=activePage==MODE_TAB; place(modes,mainX,headerH,math.min(mainWidth,modeBarWidth),52)
+    local visibleModes=MODE_GROUPS[activePage]
+    local modeBarWidth=(visibleModes and #visibleModes or 0)*(MODE_WIDTH+2)+8
+    modes.Visible=visibleModes~=nil; place(modes,mainX,headerH,math.min(mainWidth,modeBarWidth),52)
     modes.CanvasSize=UDim2.fromOffset(modeBarWidth,0)
     local activeButton=modeButtons[activeMode]
     animate(modeIndicator,{Position=activeButton.Position,Size=activeButton.Size},.16)
     modes.CanvasPosition=Vector2.new(math.clamp(activeButton.Position.X.Offset-4,0,math.max(0,modeBarWidth-mainWidth)),0)
-    for name,b in pairs(modeButtons) do local on=name==activeMode; b.Label.TextColor3=on and C.text or C.muted end
-    local top=headerH+(activePage==MODE_TAB and 62 or 5)
+    for page,names in pairs(MODE_GROUPS) do
+        for _,name in ipairs(names) do
+            local b=modeButtons[name]; b.Visible=page==activePage
+            local on=name==activeMode; b.Label.TextColor3=on and C.text or C.muted
+        end
+    end
+    local top=headerH+(visibleModes and 62 or 5)
     local contentH=BASE_H-top-36
     place(content,mainX,top,mainWidth,contentH)
     place(footer,mainX,BASE_H-35,mainWidth,35)
@@ -856,6 +878,9 @@ performLayout=function()
     local total=math.max(0,math.max(heights[1],heights[2])-gap); content.CanvasSize=UDim2.fromOffset(0,total)
     content.CanvasPosition=Vector2.new(0,math.min(content.CanvasPosition.Y,math.max(0,total-contentH)))
     gui:SetAttribute("ActivePage",activePage); gui:SetAttribute("Mode",activeMode)
+    if MODE_GROUPS[activePage] then
+        modeStates[activePage]=activeMode; gui:SetAttribute("Mode_"..activePage,activeMode)
+    end
     gui:SetAttribute("Layout","Compact"); gui:SetAttribute("ColumnCount",columns); gui:SetAttribute("AutoScale",scaleFactor); gui:SetAttribute("AspectRatio",BASE_W/BASE_H)
     fontScale=scaleFactor
     if lastRasterScale~=scaleFactor then
@@ -867,7 +892,7 @@ local function openFeature(c,r)
     if r.Ensure then r.Ensure() end
     closeDropdown(); search:ReleaseFocus()
     activePage=c.page
-    if c.mode then activeMode=c.mode end
+    if c.mode then activeMode=c.mode; modeStates[c.page]=c.mode end
     if r.tab then c.activeTab=r.tab end
     c.collapsed=false; c.frame:SetAttribute("Collapsed",false)
     search.Text=""; layout()
@@ -1053,6 +1078,7 @@ track(Input.InputBegan:Connect(function(input,processed)
     if input.KeyCode==Enum.KeyCode.Escape then closeDropdown() end
 end))
 local Window={Gui=gui}
+local applyingConfig=false
 local SectionMethods={}
 local function titleOf(cfg)
     assert(type(cfg)=="table" and type(cfg.Title)=="string" and cfg.Title~="","A nonempty Title is required")
@@ -1080,8 +1106,13 @@ local function bindControl(section,cfg,r)
     end})
     if cfg.Callback and r.kind~="action" then
         assert(type(cfg.Callback)=="function","Callback must be a function")
+        r.Invoke=function()
+            r.LastCallbackValue=gui:GetAttribute(name)
+            return pcall(cfg.Callback,readValue())
+        end
         track(gui:GetAttributeChangedSignal(name):Connect(function()
-            local ok,err=pcall(cfg.Callback,readValue())
+            if applyingConfig or r.LastCallbackValue==gui:GetAttribute(name) then return end
+            local ok,err=r.Invoke()
             if not ok then warn("[LimboUI Callback] "..tostring(err)) end
         end))
     end
@@ -1297,7 +1328,7 @@ function Window:Tab(cfg)
     function tab:Section(sectionConfig)
         local heading=titleOf(sectionConfig)
         local mode=sectionConfig.Mode
-        assert(mode==nil or modeButtons[mode]~=nil,"Section Mode must match a configured subtab name")
+        assert(mode==nil or table.find(MODE_GROUPS[tab.Title] or {},mode),"Section Mode must match a configured subtab name for this tab")
         local column=sectionConfig.Column or 1; assert(column==1 or column==2,"Column must be 1 or 2")
         local iconName=sectionConfig.Icon==nil and "workflow" or sectionConfig.Icon; assert(iconName==false or LUCIDE[iconName],"Unknown section icon")
         local name=sectionConfig.Name or heading:gsub("[^%w_]","").."Card"
@@ -1318,10 +1349,15 @@ function Window:ConfigPanel(tab,options)
     assert(type(folder)=="string" and folder:match("^[%w_/-]+$") and not folder:find("//",1,true) and folder:sub(1,1)~="/","Invalid config folder")
     local Http=game:GetService("HttpService")
     local current,autoload="None","None"
-    local section=tab:Section({Title="Config Manager",Name="ConfigManagerCard",Icon=false,Column=2})
-    local tabs=section:Tabs({Name="ConfigTabs",Values={"Profiles","Import / Export"},Value="Profiles"})
-    local profiles=tabs:Tab("Profiles")
-    local externalSection=tabs:Tab("Import / Export")
+    local section=tab:Section({Title="Config Manager",Name="ConfigManagerCard",Icon=false,Column=options.Split and 1 or 2,Mode=options.Mode})
+    local profiles,externalSection
+    if options.Split then
+        profiles=section
+        externalSection=tab:Section({Title="Import / Export",Name="ConfigTransferCard",Icon=false,Column=2,Mode=options.Mode})
+    else
+        local tabs=section:Tabs({Name="ConfigTabs",Values={"Profiles","Import / Export"},Value="Profiles"})
+        profiles,externalSection=tabs:Tab("Profiles"),tabs:Tab("Import / Export")
+    end
     local status=profiles:Paragraph({Title="Profiles",Flag="ConfigStatus",Content="Current: None | Autoload: None",Save=false})
     local name=profiles:Input({Title="Config Name",Flag="ConfigName",Placeholder="My config",MaxLength=48,Save=false})
     local selection=profiles:Dropdown({Title="Saved Configs",Flag="SelectedConfig",Values={"None"},Value="None",Save=false,Callback=function(value) if value~="None" then name:Set(value) end end})
@@ -1375,7 +1411,44 @@ function Window:ConfigPanel(tab,options)
             end
         end
         assert(#changes>0,"No compatible controls were found in this config.")
-        for _,change in ipairs(changes) do change[1].Set(change[2]) end
+        table.sort(changes,function(a,b) return a[1].name<b[1].name end)
+        local function assign(r,value)
+            r.Set(value)
+            if r.Invoke then
+                local ok,err=r.Invoke()
+                assert(ok,"Could not apply "..r.name..": "..tostring(err))
+            end
+        end
+        assert(not applyingConfig,"A config is already loading.")
+        applyingConfig=true
+        local ok,err=pcall(function()
+            -- Stop workers before changing filters, including toggles that already match the profile.
+            for _,change in ipairs(changes) do
+                local r=change[1]
+                if r.kind=="toggle" then assign(r,false) end
+            end
+            -- Install every input before callbacks read other controls.
+            for _,change in ipairs(changes) do
+                if change[1].kind~="toggle" then change[1].Set(change[2]) end
+            end
+            for _,change in ipairs(changes) do
+                local r=change[1]
+                if r.kind~="toggle" and r.Invoke then
+                    local applied,message=r.Invoke()
+                    assert(applied,"Could not apply "..r.name..": "..tostring(message))
+                end
+            end
+            for _,change in ipairs(changes) do
+                if change[1].kind=="toggle" and change[2] then assign(change[1],true) end
+            end
+        end)
+        applyingConfig=false
+        assert(ok,err)
+        for _,change in ipairs(changes) do
+            if change[1].kind=="toggle" then
+                assert(gui:GetAttribute(change[1].name)==change[2],"Feature could not restore its saved state: "..change[1].name)
+            end
+        end
         return #changes
     end
     local function decode(raw)
