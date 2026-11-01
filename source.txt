@@ -37,7 +37,7 @@ local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.5.0",SupportsAnnouncements=true,SupportsConfigReplay=true,SupportsMultiSelect=true,SupportsSubTabs=true,SupportsTabSubTabs=true}
+local Limbo={Version="1.5.0",SupportsGameIconFallback=true,SupportsAnnouncements=true,SupportsConfigReplay=true,SupportsMultiSelect=true,SupportsSubTabs=true,SupportsTabSubTabs=true}
 assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
@@ -120,6 +120,7 @@ if previous then previous:Destroy() end
 local C={bg=Color3.fromRGB(27,33,45),sidebar=Color3.fromRGB(22,28,40),card=Color3.fromRGB(38,46,61),field=Color3.fromRGB(30,38,52),hover=Color3.fromRGB(48,61,81),border=Color3.fromRGB(96,112,137),text=Color3.fromRGB(246,249,255),muted=Color3.fromRGB(202,212,227),faint=Color3.fromRGB(174,190,211),blue=Color3.fromRGB(117,181,255),selected=Color3.fromRGB(43,65,99),off=Color3.fromRGB(73,83,102)}
 local BASE_W,BASE_H=1040,600
 local MIN_SCALE=.875
+local MIN_TEXT_PIXELS=12
 local LOGO=config.Logo or "rbxassetid://97957114633547"
 local GAME_NAME=config.Subtitle or "NAMA GAME"
 local BRAND_NAME=config.Title or "LIMBO HUB"
@@ -134,10 +135,10 @@ local MODE_WIDTH=(config.SubTabs or config.ModeLabels) and 148 or 116
 local FONT_BODY=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontWeight.Bold)
 local FONT_STRONG=Font.new("rbxasset://fonts/families/BuilderSans.json",Enum.FontWeight.ExtraBold)
 local fontScale=1
-local textRuns=setmetatable({},{__mode="k"})
+local textRuns={}
 local lastRasterScale
 local function rasterText(obj,designSize)
-    local screenPixels=math.max(1,math.floor(designSize*fontScale+.5))
+    local screenPixels=math.max(MIN_TEXT_PIXELS,math.floor(designSize*fontScale+.5))
     local size=math.max(1,math.floor(screenPixels/fontScale+.5))
     if obj.TextSize~=size then obj.TextSize=size end
 end
@@ -146,6 +147,7 @@ local function make(class,props,target)
     for key,value in pairs(props) do obj[key]=value end
     if obj:IsA("TextLabel") or obj:IsA("TextBox") then
         textRuns[obj]=obj.TextSize; rasterText(obj,obj.TextSize)
+        obj.Destroying:Once(function() textRuns[obj]=nil end)
     end
     obj.Parent=target; return obj
 end
@@ -158,7 +160,7 @@ local function border(obj,transparency)
 end
 local function box(target,name,color) return make("Frame",{Name=name,BackgroundColor3=color or C.card,BorderSizePixel=0},target) end
 local function text(target,name,value,size,color,bold)
-    return make("TextLabel",{Name=name,Text=value,BackgroundTransparency=1,TextSize=math.max(size or 16,14),TextColor3=color or C.text,FontFace=bold and FONT_STRONG or FONT_BODY,TextScaled=false,TextStrokeTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center},target)
+    return make("TextLabel",{Name=name,Text=value,BackgroundTransparency=1,TextSize=math.max(size or 16,14),TextColor3=color or C.text,FontFace=bold and FONT_STRONG or FONT_BODY,TextScaled=false,TextTruncate=Enum.TextTruncate.AtEnd,TextStrokeTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center},target)
 end
 local function place(obj,x,y,w,h) obj.Position=UDim2.fromOffset(x,y); obj.Size=UDim2.fromOffset(w,h) end
 local function icon(target,name,size,color)
@@ -204,7 +206,7 @@ task.spawn(function()
     local ok,image=pcall(function() return Players:GetUserThumbnailAsync(player.UserId,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size100x100) end)
     if ok and gui.Parent then avatar.Image=image end
 end)
-local nav=box(root,"Navigation"); nav.BackgroundTransparency=1; nav.ZIndex=4
+local nav=make("ScrollingFrame",{Name="Navigation",BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,ScrollBarImageColor3=C.faint,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.Y,ZIndex=4},root)
 local header=box(root,"Header"); header.BackgroundTransparency=1
 local drag=button(header,"DragBar"); drag.Size=UDim2.fromScale(1,1)
 local sidebarToggle=button(header,"SidebarToggle"); hover(sidebarToggle)
@@ -369,7 +371,7 @@ local panEnabled=false
 local function getPanArea(scale)
     local view=canvas.AbsoluteSize
     local margin=math.min(view.X,view.Y)<700 and 8 or 20
-    return Vector2.new(math.max(view.X,BASE_W*scale+margin*2),math.max(view.Y,BASE_H*scale+margin*2))
+    return Vector2.new(math.max(view.X,logicalW*scale+margin*2),math.max(view.Y,logicalH*scale+margin*2))
 end
 local dragOffset=Vector2.zero
 local dragging,dragStart,dragOrigin,sliding
@@ -424,7 +426,7 @@ local function toggle(c,name,caption,default)
     local knob=box(bar,"Knob",C.muted); corner(knob,9); knob.Size=UDim2.fromOffset(18,18)
     local function paint(value,instant)
         b:SetAttribute("Value",value)
-        local props={Position=UDim2.fromOffset(value and 19 or 3,3),BackgroundColor3=value and Color3.fromRGB(249,252,255) or C.muted}
+        local props={Position=UDim2.fromOffset(value and bar.Size.X.Offset-knob.Size.X.Offset-3 or 3,3),BackgroundColor3=value and Color3.fromRGB(249,252,255) or C.muted}
         if instant then for k,v in pairs(props) do knob[k]=v end; bar.BackgroundColor3=value and C.blue or C.off
         else animate(knob,props); animate(bar,{BackgroundColor3=value and C.blue or C.off}) end
     end
@@ -502,24 +504,26 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
         closeDropdown()
         local dismiss=button(root,"DismissDropdown"); dismiss.Size=UDim2.fromScale(1,1); dismiss.ZIndex=50; dismiss.Activated:Connect(closeDropdown)
         local left,top,right,bottom=popupBounds()
-        local width=math.min(right-left,math.max(b.AbsoluteSize.X/scaleFactor,208))
-        local height=math.min((#options+(multi and 1 or 0))*46+62,bottom-top,320)
+        local optionH=math.max(44,28/scaleFactor); local optionStep=optionH+2
+        local searchH=math.max(36,28/scaleFactor); local listTop=searchH+16
+        local width=math.min(right-left,math.max(b.AbsoluteSize.X/scaleFactor,208,180/scaleFactor))
+        local height=math.min((#options+(multi and 1 or 0))*optionStep+listTop+10,bottom-top,math.max(320,240/scaleFactor))
         local p=(b.AbsolutePosition-root.AbsolutePosition)/scaleFactor
         local y=p.Y+b.AbsoluteSize.Y/scaleFactor+6; if y+height>bottom then y=p.Y-height-6 end
         y=math.clamp(y,top,bottom-height)
         local menu=box(root,"DropdownMenu",C.hover); menu.ZIndex=60; menu.ClipsDescendants=true
         place(menu,math.clamp(p.X,left,right-width),y,width,height); corner(menu,12); border(menu,.15); menu:SetAttribute("Owner",name); openMenu=menu
-        local searchField=box(menu,"SearchField",C.field); searchField.ZIndex=61; place(searchField,8,8,width-16,36); corner(searchField,8); border(searchField,.65)
+        local searchField=box(menu,"SearchField",C.field); searchField.ZIndex=61; place(searchField,8,8,width-16,searchH); corner(searchField,8); border(searchField,.65)
         local searchGlyph=icon(searchField,"search",16,C.faint); searchGlyph.Position=UDim2.fromOffset(10,10)
         local popupSearch=make("TextBox",{Name="Search",Text="",PlaceholderText="Search options...",ClearTextOnFocus=false,BackgroundTransparency=1,TextColor3=C.text,PlaceholderColor3=C.faint,TextSize=15,FontFace=FONT_BODY,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=62,Position=UDim2.fromOffset(34,0),Size=UDim2.new(1,-42,1,0)},searchField)
-        local list=make("ScrollingFrame",{Name="Options",BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=C.faint,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.Y,ZIndex=61,Position=UDim2.fromOffset(4,52),Size=UDim2.new(1,-8,1,-56)},menu)
-        local noResults=text(list,"NoResults","No results found",14,C.muted); noResults.TextXAlignment=Enum.TextXAlignment.Center; place(noResults,4,0,width-16,44); noResults.Visible=false
+        local list=make("ScrollingFrame",{Name="Options",BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=C.faint,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.Y,ZIndex=61,Position=UDim2.fromOffset(4,listTop),Size=UDim2.new(1,-8,1,-listTop-4)},menu)
+        local noResults=text(list,"NoResults","No results found",14,C.muted); noResults.TextXAlignment=Enum.TextXAlignment.Center; place(noResults,4,0,width-16,optionH); noResults.Visible=false
         local choices={}
         optionRows={}
         ownerMenu=menu
         menu.Destroying:Connect(function() if ownerMenu==menu then optionRows={}; ownerMenu=nil end end)
         if multi then
-            local clear=button(list,"ClearSelection"); clear.ZIndex=62; place(clear,0,0,width-8,44); hover(clear)
+            local clear=button(list,"ClearSelection"); clear.ZIndex=62; place(clear,0,0,width-8,optionH); hover(clear)
             local label=text(clear,"Label","Clear selection",14,C.muted); label.Position=UDim2.fromOffset(12,0); label.Size=UDim2.new(1,-24,1,0)
             clear.Activated:Connect(function() r.Set({}) end)
             table.insert(choices,{button=clear,label="",always=true})
@@ -527,7 +531,7 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
         if #options>40 then
             local pool,filtered={},{}
             local offset=multi and 1 or 0
-            local visibleRows=math.ceil(math.max(44,height-56)/46)+2
+            local visibleRows=math.ceil(math.max(optionH,height-listTop-4)/optionStep)+2
             for index=1,visibleRows do
                 local choice=button(list,"Option"..index); choice.ZIndex=62; hover(choice)
                 local caption=text(choice,"Label","",14,C.text); caption.Position=UDim2.fromOffset(12,0); caption.Size=UDim2.new(1,-44,1,0)
@@ -545,14 +549,14 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
             end
             local function renderOptions()
                 optionRows={}
-                local first=math.max(1,math.floor(list.CanvasPosition.Y/46)+1-offset)
+                local first=math.max(1,math.floor(list.CanvasPosition.Y/optionStep)+1-offset)
                 local selected=multi and r.Get()
                 for index,item in ipairs(pool) do
                     local position=first+index-1
                     local option=filtered[position]
                     item.option=option; item.button.Visible=option~=nil
                     if option then
-                        place(item.button,0,(position-1+offset)*46,width-8,44)
+                        place(item.button,0,(position-1+offset)*optionStep,width-8,optionH)
                         item.label.Text=option
                         local on=multi and table.find(selected,option)~=nil or not multi and option==captionLabel.Text
                         item.label.TextColor3=on and C.blue or C.text; item.check.Visible=on
@@ -566,9 +570,9 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
                 for _,option in ipairs(options) do
                     if query=="" or string.find(string.lower(option),query,1,true) then table.insert(filtered,option) end
                 end
-                list.CanvasSize=UDim2.fromOffset(0,math.max(44,(#filtered+offset)*46)+(multi and #filtered==0 and 44 or 0))
+                list.CanvasSize=UDim2.fromOffset(0,math.max(optionH,(#filtered+offset)*optionStep)+(multi and #filtered==0 and optionH or 0))
                 list.CanvasPosition=Vector2.zero
-                noResults.Position=UDim2.fromOffset(4,offset*46); noResults.Visible=#filtered==0
+                noResults.Position=UDim2.fromOffset(4,offset*optionStep); noResults.Visible=#filtered==0
                 renderOptions()
             end
             list:GetPropertyChangedSignal("CanvasPosition"):Connect(renderOptions)
@@ -579,7 +583,7 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
         end
         local selected=multi and r.Get()
         for i,opt in ipairs(options) do
-            local choice=button(list,"Option"..i); choice.ZIndex=62; place(choice,0,(i-1)*46,width-8,44); hover(choice)
+            local choice=button(list,"Option"..i); choice.ZIndex=62; place(choice,0,(i-1)*optionStep,width-8,optionH); hover(choice)
             local on=multi and table.find(selected,opt)~=nil or not multi and opt==captionLabel.Text
             local caption=text(choice,"Label",opt,14,on and C.blue or C.text); caption.Position=UDim2.fromOffset(12,0); caption.Size=UDim2.new(1,-44,1,0)
             local check=icon(choice,"check",16,C.blue); check.Position=UDim2.new(1,-28,.5,-8); check.Visible=on
@@ -600,12 +604,12 @@ local function dropdown(c,name,caption,options,default,full,multi,placeholder)
                 local matches=item.always or query=="" or string.find(item.label,query,1,true)~=nil
                 item.button.Visible=matches
                 if matches then
-                    item.button.Position=UDim2.fromOffset(0,count*46); count+=1
+                    item.button.Position=UDim2.fromOffset(0,count*optionStep); count+=1
                     if not item.always then matched+=1 end
                 end
             end
-            list.CanvasPosition=Vector2.zero; list.CanvasSize=UDim2.fromOffset(0,math.max(count*46,44)+(multi and matched==0 and 44 or 0))
-            noResults.Position=UDim2.fromOffset(4,multi and matched==0 and 46 or 0)
+            list.CanvasPosition=Vector2.zero; list.CanvasSize=UDim2.fromOffset(0,math.max(count*optionStep,optionH)+(multi and matched==0 and optionH or 0))
+            noResults.Position=UDim2.fromOffset(4,multi and matched==0 and optionStep or 0)
             noResults.Visible=matched==0
         end
         popupSearch:GetPropertyChangedSignal("Text"):Connect(filterOptions)
@@ -618,6 +622,7 @@ local function actionButton(r,caption,iconName,primary)
     local b=button(r.frame,"Button"); b.Position=UDim2.fromOffset(0,4); b.Size=UDim2.new(1,0,1,-8); b.BackgroundTransparency=0; b.BackgroundColor3=primary and C.selected or C.hover; border(b,primary and .25 or .7); hover(b)
     if iconName~=false then local ico=icon(b,iconName or "zap",18,primary and C.blue or C.muted); ico.Position=UDim2.fromOffset(14,10) end
     local captionLabel=text(b,"Label",caption,16,primary and C.blue or C.text,true)
+    captionLabel.TextWrapped=true
     captionLabel.Position=UDim2.fromOffset(iconName==false and 12 or 43,0); captionLabel.Size=UDim2.new(1,iconName==false and -24 or -55,1,0)
     captionLabel.TextXAlignment=iconName==false and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
     b.Activated:Connect(function()
@@ -701,11 +706,38 @@ local function mode(value)
 end
 for name,b in pairs(modeButtons) do b.Activated:Connect(function() mode(name) end) end
 local function rowHeight(r,width)
-    if r.kind=="games" then return #r.entries==0 and 68 or math.ceil(#r.entries/2)*98 end
-    if r.kind=="banner" then return #r.tags>0 and 250 or 208 end
-    if r.kind=="select" then return 52 end
-    if r.kind=="selectFull" then return 74 end
-    if r.kind=="slider" then return 94 end
+    local function height(label,w)
+        rasterText(label,textRuns[label])
+        local font=label.FontFace.Weight==Enum.FontWeight.ExtraBold and Enum.Font.BuilderSansExtraBold or Enum.Font.BuilderSansBold
+        local bounds=Vector2.new(math.max(1,math.floor(w*scaleFactor)-2),100000)
+        return math.ceil(TextService:GetTextSize(label.Text,math.floor(label.TextSize*scaleFactor+.5),font,bounds).Y/scaleFactor)+2
+    end
+    local controlH=math.max(36,28/scaleFactor)
+    if r.kind=="games" then
+        r.tileHeight=math.max(88,64/scaleFactor)
+        return #r.entries==0 and math.max(68,height(r.frame.Message,width-8)+16) or math.ceil(#r.entries/2)*(r.tileHeight+10)
+    end
+    if r.kind=="banner" then
+        local copyWidth=width-174
+        r.badgeH=math.max(24,16/scaleFactor)
+        r.titleY=math.max(46,12+r.badgeH+10); r.titleH=math.max(78,height(r.label,copyWidth))
+        r.detailY=r.titleY+r.titleH+8; r.detailH=math.max(62,height(r.detail,copyWidth))
+        r.tagsY=r.detailY+r.detailH+14
+        return math.max(208,r.tagsY+(#r.tags>0 and math.max(32,18/scaleFactor)+10 or 0))
+    end
+    if r.kind=="toggle" then return math.max(42,height(r.label,width-math.max(40,28/scaleFactor)-24)+8,32/scaleFactor) end
+    if r.kind=="select" then
+        r.labelHeight=height(r.label,width-math.min(172,width*.48)-14)
+        return math.max(52,r.labelHeight+8,controlH+16)
+    end
+    if r.kind=="selectFull" then
+        r.labelHeight=height(r.label,width-4)
+        return math.max(74,r.labelHeight+controlH+12)
+    end
+    if r.kind=="slider" then
+        r.labelHeight=math.max(36,height(r.label,width-73),controlH)
+        return math.max(94,r.labelHeight+math.max(44,28/scaleFactor)+14)
+    end
     if r.kind=="note" then
         local measured=r.measurement
         if measured and measured.width==width and measured.scale==scaleFactor
@@ -720,15 +752,28 @@ local function rowHeight(r,width)
         r.measurement={width=width,scale=scaleFactor,title=r.label.Text,content=r.detail.Text,height=height}
         return height
     end
-    if r.kind=="action" then return 46 end
-    if r.kind=="actions" then return 46 end
-    if r.kind=="input" then return r.multiline and 150 or 78 end
-    return 42
+    if r.kind=="action" then
+        local label=r.frame.Button.Label
+        return math.max(46,height(label,width+label.Size.X.Offset)+16,32/scaleFactor)
+    end
+    if r.kind=="actions" then
+        local h=math.max(46,32/scaleFactor)
+        for _,child in ipairs(r.buttons) do h=math.max(h,height(child.Button.Label,(width-(#r.buttons-1)*8)/#r.buttons+child.Button.Label.Size.X.Offset)+16) end
+        return h
+    end
+    if r.kind=="input" then return math.max(r.multiline and 150 or 78,(r.multiline and 80 or 52)/scaleFactor) end
+    return math.max(42,32/scaleFactor)
 end
 local function arrangeRow(r,width)
-    if r.kind=="actions" then
+    if r.kind=="toggle" then
+        local b=r.frame.Toggle; local bar=b.Track; local knob=bar.Knob
+        local w,h=math.max(40,28/scaleFactor),math.max(24,16/scaleFactor)
+        bar.Size=UDim2.fromOffset(w,h); bar.Position=UDim2.new(1,-w-2,.5,-h/2)
+        knob.Size=UDim2.fromOffset(h-6,h-6); knob.Position=UDim2.fromOffset(b:GetAttribute("Value") and w-h+3 or 3,3)
+        b.Label.Size=UDim2.new(1,-w-24,1,0)
+    elseif r.kind=="actions" then
         local buttonWidth=(width-(#r.buttons-1)*8)/#r.buttons
-        for i,child in ipairs(r.buttons) do place(child,(i-1)*(buttonWidth+8),0,buttonWidth,46) end
+        for i,child in ipairs(r.buttons) do place(child,(i-1)*(buttonWidth+8),0,buttonWidth,r.frame.Size.Y.Offset) end
     elseif r.kind=="note" then
         local y=12+r.headingHeight+(r.headingHeight>0 and r.detailHeight>0 and 6 or 0)
         place(r.panel,0,6,width,r.frame.Size.Y.Offset-12)
@@ -736,23 +781,38 @@ local function arrangeRow(r,width)
         place(r.detail,40,y,width-54,r.detailHeight)
     elseif r.kind=="games" then
         local tileWidth=(width-10)/2
-        for i,entry in ipairs(r.entries) do place(entry,(i-1)%2*(tileWidth+10),math.floor((i-1)/2)*98+4,tileWidth,88) end
+        place(r.frame.Message,4,8,width-8,r.frame.Size.Y.Offset-16)
+        for i,entry in ipairs(r.entries) do
+            place(entry,(i-1)%2*(tileWidth+10),math.floor((i-1)/2)*(r.tileHeight+10)+4,tileWidth,r.tileHeight)
+            local titleH=math.max(24,16/scaleFactor); local versionH=math.max(20,16/scaleFactor)
+            place(entry.Title,64,10,tileWidth-76,titleH)
+            place(entry.Version,64,12+titleH,tileWidth-76,versionH)
+            place(entry.Status,14,r.tileHeight-math.max(18,16/scaleFactor)-8,tileWidth-28,math.max(18,16/scaleFactor))
+        end
     elseif r.kind=="banner" then
         local copyWidth=width-174
-        place(r.badge,4,12,copyWidth,24)
-        place(r.label,4,46,copyWidth,78)
-        place(r.detail,4,132,copyWidth,62)
+        place(r.badge,4,12,copyWidth,r.badgeH)
+        place(r.label,4,r.titleY,copyWidth,r.titleH)
+        place(r.detail,4,r.detailY,copyWidth,r.detailH)
         place(r.backdrop,width-140,46,132,132)
         local tagWidth=math.min(174,(width-8-math.max(0,#r.tags-1)*8)/math.max(1,#r.tags))
-        for i,chip in ipairs(r.tags) do place(chip,4+(i-1)*(tagWidth+8),208,tagWidth,32) end
+        for i,chip in ipairs(r.tags) do place(chip,4+(i-1)*(tagWidth+8),r.tagsY,tagWidth,math.max(32,18/scaleFactor)) end
     elseif r.kind=="selectFull" then
-        place(r.label,2,0,width-4,25); place(r.control,0,29,width,36)
+        place(r.label,2,0,width-4,r.labelHeight); place(r.control,0,r.labelHeight+4,width,math.max(36,28/scaleFactor))
     elseif r.kind=="select" then
         local w=math.min(172,width*.48)
-        place(r.label,2,0,width-w-14,52); place(r.control,width-w,8,w,36)
+        place(r.label,2,0,width-w-14,r.frame.Size.Y.Offset); place(r.control,width-w,8,w,math.max(36,28/scaleFactor))
+    elseif r.kind=="slider" then
+        place(r.label,0,8,width-73,r.labelHeight)
+        place(r.frame.Value,width-60,8,60,math.max(36,28/scaleFactor))
+        place(r.frame.Slider,0,r.labelHeight+6,width,math.max(44,28/scaleFactor))
+    elseif r.kind=="input" then
+        local labelH=math.max(23,16/scaleFactor)
+        place(r.frame.Label,2,2,width-4,labelH)
+        place(r.frame.Input,0,labelH+7,width,r.frame.Size.Y.Offset-labelH-11)
     elseif r.kind=="tabs" then
         for i,b in ipairs(r.buttons) do
-            place(b,(i-1)*width/#r.buttons,0,width/#r.buttons-3,36)
+            place(b,(i-1)*width/#r.buttons,0,width/#r.buttons-3,math.max(36,28/scaleFactor))
             local on=r.card.activeTab==r.values[i]
             b.Label.TextColor3=on and C.text or C.muted; b.BackgroundColor3=C.hover; b.BackgroundTransparency=on and .12 or 1
         end
@@ -766,11 +826,14 @@ performLayout=function()
     logicalW,logicalH=BASE_W,BASE_H
     screenScaleLimit=math.min(math.max(1,view.X-margin*2)/BASE_W,math.max(1,view.Y-margin*2)/BASE_H)
     autoScaleFactor=math.min(screenScaleLimit,.92)
+    -- Fill spare space on one axis without increasing the normal desktop footprint.
+    logicalW=math.min(BASE_W*.92,math.max(1,view.X-margin*2))/autoScaleFactor
+    logicalH=math.min(BASE_H*.92,math.max(1,view.Y-margin*2))/autoScaleFactor
     local zoom=gui:GetAttribute("UserZoom")
     zoom=type(zoom)=="number" and zoom==zoom and math.clamp(zoom,.6,10) or 1
     scaleFactor=math.clamp(autoScaleFactor*zoom,math.min(MIN_SCALE,autoScaleFactor),1.5)
-    local physicalW,physicalH=BASE_W*scaleFactor,BASE_H*scaleFactor
-    uiScale.Scale=scaleFactor; fontScale=scaleFactor; root.Size=UDim2.fromOffset(BASE_W,BASE_H)
+    local physicalW,physicalH=logicalW*scaleFactor,logicalH*scaleFactor
+    uiScale.Scale=scaleFactor; fontScale=scaleFactor; root.Size=UDim2.fromOffset(logicalW,logicalH)
     panArea=getPanArea(scaleFactor)
     canvas.CanvasSize=UDim2.fromOffset(panArea.X,panArea.Y)
     panEnabled=panArea.X>view.X+1 or panArea.Y>view.Y+1
@@ -784,50 +847,68 @@ performLayout=function()
     root.Position=UDim2.fromOffset(panArea.X/2+dx,panArea.Y/2+dy)
     fitToast()
     local sideWidth=sidebarCollapsed and 64 or 184
-    place(sidebar,0,0,sideWidth,BASE_H)
+    place(sidebar,0,0,sideWidth,logicalH)
     place(brandIcon,sidebarCollapsed and 9 or 12,23,46,46); place(brand,58,25,112,24); place(version,58,49,112,18)
+    local brandH=math.max(24,14/scaleFactor)
+    place(brand,58,25,112,brandH); place(version,58,25+brandH,112,math.max(18,14/scaleFactor))
     brand.Visible=not sidebarCollapsed; version.Visible=not sidebarCollapsed
-    place(profile,sidebarCollapsed and 10 or 18,BASE_H-72,sideWidth-(sidebarCollapsed and 20 or 36),60)
     place(avatar,sidebarCollapsed and 3 or 0,16,38,38); place(welcome,48,16,104,20); place(maskedName,48,34,104,20)
+    local profileH=math.max(60,36/scaleFactor)
+    place(profile,sidebarCollapsed and 10 or 18,logicalH-profileH-12,sideWidth-(sidebarCollapsed and 20 or 36),profileH)
+    place(welcome,48,8,104,math.max(20,14/scaleFactor)); place(maskedName,48,8+math.max(20,14/scaleFactor),104,math.max(20,14/scaleFactor))
     welcome.Visible=not sidebarCollapsed; maskedName.Visible=not sidebarCollapsed
-    place(nav,10,103,sideWidth-20,296)
+    local navTop=math.max(103,25+brandH+math.max(18,14/scaleFactor)+12)
+    local navH=math.max(0,logicalH-profileH-navTop-24)
+    local navButtonH=math.max(44,28/scaleFactor); local navStep=navButtonH+4
+    place(nav,10,navTop,sideWidth-20,navH)
+    nav.CanvasSize=UDim2.fromOffset(0,#navItems*navStep)
+    nav.CanvasPosition=Vector2.new(0,math.min(nav.CanvasPosition.Y,math.max(0,#navItems*navStep-navH)))
     for name,item in pairs(navButtons) do
         local b=item.button; local on=activePage==name
-        place(b,0,(item.index-1)*48,sideWidth-20,44)
+        place(b,0,(item.index-1)*navStep,sideWidth-20,navButtonH)
         item.icon.AnchorPoint=Vector2.new(sidebarCollapsed and .5 or 0,.5)
         item.icon.Position=UDim2.new(sidebarCollapsed and .5 or 0,sidebarCollapsed and 0 or 12,.5,0)
-        place(item.label,44,0,sideWidth-64,44)
+        place(item.label,44,0,sideWidth-64,navButtonH)
         item.label.Visible=not sidebarCollapsed
         item.indicator.Visible=on and not sidebarCollapsed; place(item.indicator,0,12,3,20)
         item.outline.Transparency=on and .28 or 1
         b.BackgroundTransparency=on and .12 or 1; item.label.TextColor3=on and C.text or C.muted; tint(item.icon,on and C.blue or C.muted)
     end
-    local mainX=sideWidth+20; local mainWidth=BASE_W-mainX-20
-    local headerH=76
+    local mainX=sideWidth+20; local mainWidth=logicalW-mainX-20
+    local headerH=math.max(76,44/scaleFactor)
     place(header,mainX,0,mainWidth,headerH)
-    place(sidebarToggle,0,19,36,38)
+    local buttonW,buttonH=math.max(36,24/scaleFactor),math.max(38,28/scaleFactor)
+    local buttonY=(headerH-buttonH)/2
+    place(sidebarToggle,0,buttonY,buttonW,buttonH)
+    sidebarCloseIcon.Position=UDim2.fromOffset((buttonW-20)/2,(buttonH-20)/2); sidebarOpenIcon.Position=sidebarCloseIcon.Position
     sidebarCloseIcon.Visible=not sidebarCollapsed; sidebarOpenIcon.Visible=sidebarCollapsed
-    title.Text=activePage; place(title,46,18,mainWidth-376,38)
-    place(headerLine,0,72,mainWidth,1)
-    place(searchShell,mainWidth-318,19,272,38)
-    place(minimize,mainWidth-36,19,36,38); place(minus,8,9,20,20)
+    local searchW=math.min(mainWidth*.42,math.max(272,88/scaleFactor))
+    local searchX=mainWidth-buttonW-10-searchW
+    title.Text=activePage; place(title,buttonW+10,buttonY,math.max(1,searchX-buttonW-20),buttonH)
+    place(headerLine,0,headerH-4,mainWidth,1)
+    place(searchShell,searchX,buttonY,searchW,buttonH)
+    place(minimize,mainWidth-buttonW,buttonY,buttonW,buttonH); place(minus,(buttonW-20)/2,(buttonH-20)/2,20,20)
     local visibleModes=MODE_GROUPS[activePage]
-    local modeBarWidth=(visibleModes and #visibleModes or 0)*(MODE_WIDTH+2)+8
-    modes.Visible=visibleModes~=nil; place(modes,mainX,headerH,math.min(mainWidth,modeBarWidth),52)
+    local modeButtonW=math.max(MODE_WIDTH,72/scaleFactor); local modeH=math.max(52,36/scaleFactor)
+    local modeBarWidth=(visibleModes and #visibleModes or 0)*(modeButtonW+2)+8
+    modes.Visible=visibleModes~=nil; place(modes,mainX,headerH,math.min(mainWidth,modeBarWidth),modeH)
     modes.CanvasSize=UDim2.fromOffset(modeBarWidth,0)
     local activeButton=modeButtons[activeMode]
-    animate(modeIndicator,{Position=activeButton.Position,Size=activeButton.Size},.16)
-    modes.CanvasPosition=Vector2.new(math.clamp(activeButton.Position.X.Offset-4,0,math.max(0,modeBarWidth-mainWidth)),0)
     for page,names in pairs(MODE_GROUPS) do
-        for _,name in ipairs(names) do
+        for i,name in ipairs(names) do
             local b=modeButtons[name]; b.Visible=page==activePage
+            place(b,4+(i-1)*(modeButtonW+2),4,modeButtonW,modeH-8)
+            b.Label.Size=UDim2.new(1,-16,1,0)
             local on=name==activeMode; b.Label.TextColor3=on and C.text or C.muted
         end
     end
-    local top=headerH+(visibleModes and 62 or 5)
-    local contentH=BASE_H-top-36
+    animate(modeIndicator,{Position=activeButton.Position,Size=activeButton.Size},.16)
+    modes.CanvasPosition=Vector2.new(math.clamp(activeButton.Position.X.Offset-4,0,math.max(0,modeBarWidth-mainWidth)),0)
+    local top=headerH+(visibleModes and modeH+10 or 5)
+    local footerH=math.max(35,16/scaleFactor)
+    local contentH=logicalH-top-footerH-1
     place(content,mainX,top,mainWidth,contentH)
-    place(footer,mainX,BASE_H-35,mainWidth,35)
+    place(footer,mainX,logicalH-footerH,mainWidth,footerH)
     local columns=2; local gap=12
     local innerWidth=mainWidth-7
     local cardWidth=(innerWidth-gap)/2
@@ -851,6 +932,17 @@ performLayout=function()
         if visible then
             local col=c.column
             local width=c.fullWidth and innerWidth or cardWidth
+            local caption=c.frame.Collapse.Title
+            local cardHeaderH=math.max(54,28/scaleFactor)
+            local captionH=math.max(33,14/scaleFactor)
+            c.frame.Collapse.Size=UDim2.new(1,0,0,cardHeaderH)
+            c.frame.Divider.Position=UDim2.fromOffset(18,cardHeaderH)
+            c.body.Position=UDim2.fromOffset(0,cardHeaderH+6)
+            c.arrow.Position=UDim2.new(1,-34,0,(cardHeaderH-16)/2)
+            local glyph=c.frame.Collapse:FindFirstChild("Icon")
+            if glyph then glyph.Position=UDim2.fromOffset(18,(cardHeaderH-24)/2) end
+            caption.Size=UDim2.new(caption.Size.X.Scale,caption.Size.X.Offset,0,captionH)
+            caption.Position=UDim2.new(caption.Position.X.Scale,caption.Position.X.Offset,0,(cardHeaderH-captionH)/2)
             local y=c.fullWidth and math.max(heights[1],heights[2]) or heights[col]
             local expanded=not c.collapsed; c.body.Visible=expanded; animate(c.arrow,{Rotation=expanded and 180 or 0},.16)
             local rowY=0
@@ -858,7 +950,7 @@ performLayout=function()
                 local rowWidth=width-32; local h=rowHeight(r,rowWidth)
                 place(r.frame,16,rowY,rowWidth,h); arrangeRow(r,rowWidth); rowY+=h
             end end
-            local h=expanded and 60+rowY+12 or 54
+            local h=expanded and cardHeaderH+6+rowY+12 or cardHeaderH
             place(c.frame,c.fullWidth and 0 or (col-1)*(cardWidth+gap),y,width,h); c.body.Size=UDim2.fromOffset(width,rowY)
             if c.fullWidth then heights[1]=y+h+gap; heights[2]=y+h+gap else heights[col]=y+h+gap end
         end
@@ -869,7 +961,7 @@ performLayout=function()
     if MODE_GROUPS[activePage] then
         modeStates[activePage]=activeMode; gui:SetAttribute("Mode_"..activePage,activeMode)
     end
-    gui:SetAttribute("Layout","Compact"); gui:SetAttribute("ColumnCount",columns); gui:SetAttribute("AutoScale",scaleFactor); gui:SetAttribute("AspectRatio",BASE_W/BASE_H)
+    gui:SetAttribute("Layout","Compact"); gui:SetAttribute("ColumnCount",columns); gui:SetAttribute("AutoScale",scaleFactor); gui:SetAttribute("AspectRatio",logicalW/logicalH)
     fontScale=scaleFactor
     if lastRasterScale~=scaleFactor then
         for obj,designSize in pairs(textRuns) do if obj.Parent then rasterText(obj,designSize) end end
@@ -929,7 +1021,8 @@ updateFeatureSearch=function()
     for word in string.gmatch(query,"%S+") do table.insert(words,word) end
     local count=0
     local left,top,right,bottom=popupBounds()
-    local width=math.min(320,right-left)
+    local width=math.min(math.max(320,220/scaleFactor),right-left)
+    local resultH=math.max(62,42/scaleFactor); local resultStep=resultH+2
     for _,item in ipairs(featureIndex) do
         local matches=true
         for _,word in ipairs(words) do if not string.find(item.haystack,word,1,true) then matches=false; break end end
@@ -946,18 +1039,19 @@ updateFeatureSearch=function()
                 entry.Activated:Connect(function() if pooled.target then openFeature(pooled.target.card,pooled.target.row) end end)
             end
             pooled.target=item; pooled.button.Visible=true
-            place(pooled.button,4,4+(count-1)*64,width-12,62)
-            pooled.title.Text=item.caption; place(pooled.title,16,5,width-44,28)
-            pooled.path.Text=item.location; place(pooled.path,16,32,width-44,22)
+            place(pooled.button,4,4+(count-1)*resultStep,width-12,resultH)
+            local titleH=math.max(28,18/scaleFactor)
+            pooled.title.Text=item.caption; place(pooled.title,16,5,width-44,titleH)
+            pooled.path.Text=item.location; place(pooled.path,16,7+titleH,width-44,math.max(22,16/scaleFactor))
         end
     end
     for i=count+1,#resultPool do resultPool[i].button.Visible=false; resultPool[i].target=nil end
     local p=(searchShell.AbsolutePosition-root.AbsolutePosition)/scaleFactor
     local y=p.Y+searchShell.AbsoluteSize.Y/scaleFactor+8
-    local height=math.min(math.max(1,count)*64+8,328,bottom-top)
+    local height=math.min(math.max(1,count)*resultStep+8,math.max(328,240/scaleFactor),bottom-top)
     place(featureResults,math.clamp(p.X,left,right-width),math.clamp(y,top,bottom-height),width,height)
-    featureResults.CanvasSize=UDim2.fromOffset(0,math.max(count,1)*64+8); featureResults.CanvasPosition=Vector2.zero
-    noFeatureResults.Visible=count==0; place(noFeatureResults,12,8,width-24,48)
+    featureResults.CanvasSize=UDim2.fromOffset(0,math.max(count,1)*resultStep+8); featureResults.CanvasPosition=Vector2.zero
+    noFeatureResults.Visible=count==0; place(noFeatureResults,12,8,width-24,math.max(48,28/scaleFactor))
     featureResults.Visible=true; searchDismiss.Visible=true; header.ZIndex=70
 end
 local function show(value)
@@ -975,7 +1069,7 @@ end)
 search:GetPropertyChangedSignal("Text"):Connect(function() updateFeatureSearch() end)
 track(canvas:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
     closeDropdown(); stopResize(); dragging=nil; sliding=nil; content.ScrollingEnabled=true; dragOffset=Vector2.zero
-    gui:SetAttribute("UserZoom",1); canvas.CanvasPosition=Vector2.zero; layout()
+    canvas.CanvasPosition=Vector2.zero; layout()
 end))
 track(gui:GetAttributeChangedSignal("UserZoom"):Connect(function()
     closeDropdown(); layout()
@@ -1012,10 +1106,9 @@ end
 track(Input.InputChanged:Connect(function(input)
     if resizing and movedBy(input,resizing.input) then
         local delta=input.Position-resizing.pointer
-        local nextScale=resizing.scale+(delta.X*BASE_W+delta.Y*BASE_H)/(BASE_W*BASE_W+BASE_H*BASE_H)
-        local view=canvas.AbsoluteSize
+        local nextScale=resizing.scale+(delta.X*logicalW+delta.Y*logicalH)/(logicalW*logicalW+logicalH*logicalH)
         nextScale=math.clamp(nextScale,math.min(MIN_SCALE,autoScaleFactor),1.5)
-        dragOffset=resizing.origin+Vector2.new(BASE_W*nextScale/2,BASE_H*nextScale/2)-getPanArea(nextScale)/2
+        dragOffset=resizing.origin+Vector2.new(logicalW*nextScale/2,logicalH*nextScale/2)-getPanArea(nextScale)/2
         gui:SetAttribute("UserZoom",math.clamp(nextScale/autoScaleFactor,.6,10))
         return
     end
@@ -1148,29 +1241,80 @@ function SectionMethods:GameList(cfg)
     local message=text(r.frame,"Message",cfg.Message or "Loading supported games...",16,C.muted)
     place(message,4,8,1,52); message.Size=UDim2.new(1,-8,0,52); message.TextWrapped=true
     local colors={Working=Color3.fromRGB(111,220,170),Patched=Color3.fromRGB(246,193,111),Discontinue=Color3.fromRGB(243,135,145)}
+    local iconAssets,iconJob,iconGeneration={},nil,0
+    local function assetId(value)
+        if type(value)=="number" and value>0 and value<=9007199254740991 and value%1==0 then value=string.format("%.0f",value) end
+        return type(value)=="string" and #value<=20 and value:match("^%d+$") and value:find("[1-9]") and value or nil
+    end
+    local function stopIcons()
+        iconGeneration=iconGeneration+1
+        if iconJob and iconJob~=coroutine.running() then pcall(task.cancel,iconJob) end
+        iconJob=nil
+    end
+    r.frame.Destroying:Connect(stopIcons)
     r.Set=function(payload)
         assert(type(payload)=="table","GameList requires a table")
         local games=payload.Games or {}
         assert(type(games)=="table" and #games<=100,"Invalid games list")
+        local currentPlaces={}
         for _,game in ipairs(games) do
             assert(type(game)=="table" and type(game.title)=="string" and #game.title>0 and #game.title<=120 and type(game.version)=="string" and #game.version<=64 and colors[game.status],"Invalid game display data")
+            local id=assetId(game.placeId); if id then currentPlaces[id]=true end
         end
+        stopIcons()
+        for id in pairs(iconAssets) do if not currentPlaces[id] then iconAssets[id]=nil end end
         for _,entry in ipairs(r.entries) do entry:Destroy() end
         r.entries={}; r.values=games
         message.Text=payload.Message or "No supported games have been published yet."
         message.Visible=#games==0
+        local pending={}
         for i,game in ipairs(games) do
             local tile=box(r.frame,"Game"..i,C.field); corner(tile,10); border(tile,.7)
             local emblem=box(tile,"Emblem",C.selected); corner(emblem,10); place(emblem,12,12,40,40)
-            if type(game.universeId)=="string" and game.universeId:match("^%d+$") and #game.universeId<=20 then
-                local image=make("ImageLabel",{Name="GameIcon",Image="rbxthumb://type=GameIcon&id="..game.universeId.."&w=150&h=150",BackgroundTransparency=1,Size=UDim2.fromScale(1,1),ScaleType=Enum.ScaleType.Crop},emblem); corner(image,10)
-            else
-                local glyph=icon(emblem,"package",22,C.blue); glyph.Position=UDim2.fromOffset(9,9)
-            end
+            local glyph=icon(emblem,"package",22,C.blue); glyph.Position=UDim2.fromOffset(9,9)
+            local universe,placeId=assetId(game.universeId),assetId(game.placeId)
+            local image=make("ImageLabel",{Name="GameIcon",Image=iconAssets[placeId] or (universe and "rbxthumb://type=GameIcon&id="..universe.."&w=150&h=150" or ""),BackgroundTransparency=1,Size=UDim2.fromScale(1,1),ScaleType=Enum.ScaleType.Crop},emblem); corner(image,10)
+            glyph.Visible=not image.IsLoaded
+            if image.Image~="" or placeId then pending[#pending+1]={image=image,glyph=glyph,placeId=placeId} end
             local title=text(tile,"Title",game.title,17,C.text,true); title.Position=UDim2.fromOffset(64,10); title.Size=UDim2.new(1,-76,0,24); title.TextTruncate=Enum.TextTruncate.AtEnd
             local version=text(tile,"Version",game.version,14,C.muted); version.Position=UDim2.fromOffset(64,36); version.Size=UDim2.new(1,-76,0,20); version.TextTruncate=Enum.TextTruncate.AtEnd
             local status=text(tile,"Status",game.status,14,colors[game.status],true); status.Position=UDim2.fromOffset(14,62); status.Size=UDim2.new(1,-28,0,18)
             table.insert(r.entries,tile)
+        end
+        if #pending>0 then
+            local generation=iconGeneration
+            iconJob=task.defer(function()
+                local provider=game:GetService("ContentProvider")
+                local images={}
+                for _,entry in ipairs(pending) do
+                    if entry.image.Image~="" then images[#images+1]=entry.image end
+                end
+                -- Preload also resolves thumbnails outside the scrolling viewport.
+                pcall(function() provider:PreloadAsync(images) end)
+                task.wait(0.1)
+                for _,entry in ipairs(pending) do
+                    if generation~=iconGeneration or not r.frame.Parent then return end
+                    local image=entry.image
+                    entry.glyph.Visible=not image.IsLoaded
+                    local placeId=tonumber(entry.placeId)
+                    if image.Parent and not image.IsLoaded and placeId and placeId<=9007199254740991 then
+                        local ok,info=pcall(function() return game:GetService("MarketplaceService"):GetProductInfoAsync(placeId,Enum.InfoType.Asset) end)
+                        if generation~=iconGeneration or not image.Parent then return end
+                        local id=ok and type(info)=="table" and assetId(info.IconImageAssetId)
+                        if id then
+                            if not image.IsLoaded then
+                                image.Image="rbxassetid://"..id
+                                pcall(function() provider:PreloadAsync({image}) end)
+                                task.wait(0.1)
+                                if generation~=iconGeneration or not image.Parent then return end
+                                entry.glyph.Visible=not image.IsLoaded
+                                if image.IsLoaded then iconAssets[entry.placeId]=image.Image end
+                            end
+                        end
+                    end
+                end
+                iconJob=nil
+            end)
         end
         layout()
     end
