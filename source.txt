@@ -274,7 +274,6 @@ local fpsWorker=task.spawn(function()
         end
     end
 end)
-local zoomControls
 local toast=box(overlay,"Toast",C.card); toast.Visible=false; toast.ZIndex=200; corner(toast,14); border(toast,.3)
 toast.AnchorPoint=Vector2.new(1,1); toast.Position=UDim2.new(1,-16,1,-40); toast.Size=UDim2.fromOffset(360,84); toast.AutomaticSize=Enum.AutomaticSize.Y
 make("UIPadding",{PaddingBottom=UDim.new(0,14)},toast)
@@ -285,7 +284,6 @@ local toastText=text(toast,"Message","",15,C.muted); toastText.TextWrapped=true;
 textRuns[toastTitle]=nil; textRuns[toastText]=nil
 local function fitToast()
     toastScale.Scale=math.min(1,math.max(1,canvas.AbsoluteSize.X-24)/360)
-    toast.Position=UDim2.new(1,-16,1,zoomControls and zoomControls.Visible and -80 or -40)
 end
 track(canvas:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitToast)); fitToast()
 local restore=make("TextButton",{Name="Restore",Text="",BackgroundTransparency=1,BorderSizePixel=0,AutoButtonColor=false,ZIndex=100,Visible=false,Size=UDim2.fromOffset(72,72),Position=UDim2.new(.5,-36,.08,-36)},overlay)
@@ -332,14 +330,6 @@ track(Input.WindowFocusReleased:Connect(function()
     if restoreDrag then restoreBlockUntil=os.clock()+.3 end
     restoreDrag=nil
 end))
-zoomControls=box(overlay,"ZoomControls",C.field); zoomControls.ZIndex=150; zoomControls.AnchorPoint=Vector2.new(.5,1); zoomControls.Position=UDim2.new(.5,0,1,-14); zoomControls.Size=UDim2.fromOffset(212,52); zoomControls.Visible=false; corner(zoomControls,12); border(zoomControls,.25)
-local zoomOut=button(zoomControls,"ZoomOut"); place(zoomOut,4,4,48,44); hover(zoomOut)
-local zoomOutIcon=icon(zoomOut,"minus",20,C.text); zoomOutIcon.Position=UDim2.fromOffset(14,12)
-local zoomIn=button(zoomControls,"ZoomIn"); place(zoomIn,160,4,48,44); hover(zoomIn)
-local zoomInIcon=icon(zoomIn,"plus",20,C.text); zoomInIcon.Position=UDim2.fromOffset(14,12)
-local panHandle=button(zoomControls,"PanHandle"); place(panHandle,52,4,108,44); hover(panHandle)
-local panIcon=icon(panHandle,"move",18,C.muted); panIcon.Position=UDim2.fromOffset(10,13)
-local zoomLabel=text(panHandle,"Percent","",14,C.text,true); place(zoomLabel,36,0,62,44); zoomLabel.TextXAlignment=Enum.TextXAlignment.Center; textRuns[zoomLabel]=nil
 local searchDismiss=button(root,"DismissFeatureSearch"); searchDismiss.Size=UDim2.fromScale(1,1); searchDismiss.ZIndex=50; searchDismiss.Visible=false
 local featureResults=make("ScrollingFrame",{Name="FeatureSearchResults",BackgroundColor3=C.field,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=C.faint,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.Y,ClipsDescendants=true,ZIndex=60,Visible=false},root)
 corner(featureResults,12); border(featureResults,.25)
@@ -383,7 +373,6 @@ local function getPanArea(scale)
 end
 local dragOffset=Vector2.zero
 local dragging,dragStart,dragOrigin,sliding
-local zoomFocus
 local resizing
 local function stopResize()
     resizing=nil; tint(resizeIcon,C.muted)
@@ -793,8 +782,7 @@ performLayout=function()
     local dy=math.clamp(dragOffset.Y,-maxY,maxY)
     dragOffset=Vector2.new(dx,dy)
     root.Position=UDim2.fromOffset(panArea.X/2+dx,panArea.Y/2+dy)
-    zoomControls.Visible=root.Visible and (panEnabled or Input.TouchEnabled or autoScaleFactor<MIN_SCALE)
-    zoomLabel.Text=tostring(math.floor(scaleFactor*100+.5)).."%"; fitToast()
+    fitToast()
     local sideWidth=sidebarCollapsed and 64 or 184
     place(sidebar,0,0,sideWidth,BASE_H)
     place(brandIcon,sidebarCollapsed and 9 or 12,23,46,46); place(brand,58,25,112,24); place(version,58,49,112,18)
@@ -973,7 +961,7 @@ updateFeatureSearch=function()
     featureResults.Visible=true; searchDismiss.Visible=true; header.ZIndex=70
 end
 local function show(value)
-    closeDropdown(); stopResize(); dragging=nil; sliding=nil; canvas.ScrollingEnabled=panEnabled; content.ScrollingEnabled=true; root.Visible=value; restore.Visible=not value; zoomControls.Visible=value and (panEnabled or Input.TouchEnabled or autoScaleFactor<MIN_SCALE); canvas.Visible=value; fitToast()
+    closeDropdown(); stopResize(); dragging=nil; sliding=nil; canvas.ScrollingEnabled=panEnabled; content.ScrollingEnabled=true; root.Visible=value; restore.Visible=not value; canvas.Visible=value; fitToast()
 end
 minimize.Activated:Connect(function() show(false) end)
 restore.Activated:Connect(function()
@@ -986,18 +974,11 @@ sidebarToggle.Activated:Connect(function()
 end)
 search:GetPropertyChangedSignal("Text"):Connect(function() updateFeatureSearch() end)
 track(canvas:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-    closeDropdown(); stopResize(); dragging=nil; sliding=nil; zoomFocus=nil; content.ScrollingEnabled=true; dragOffset=Vector2.zero
+    closeDropdown(); stopResize(); dragging=nil; sliding=nil; content.ScrollingEnabled=true; dragOffset=Vector2.zero
     gui:SetAttribute("UserZoom",1); canvas.CanvasPosition=Vector2.zero; layout()
 end))
 track(gui:GetAttributeChangedSignal("UserZoom"):Connect(function()
     closeDropdown(); layout()
-    if zoomFocus then
-        local focus=zoomFocus; zoomFocus=nil
-        local view=canvas.AbsoluteSize
-        local origin=Vector2.new(root.Position.X.Offset,root.Position.Y.Offset)-Vector2.new(BASE_W*scaleFactor/2,BASE_H*scaleFactor/2)
-        local p=origin+focus*scaleFactor-view/2
-        canvas.CanvasPosition=Vector2.new(math.clamp(p.X,0,math.max(0,panArea.X-view.X)),math.clamp(p.Y,0,math.max(0,panArea.Y-view.Y)))
-    end
 end))
 local draggingPan=false
 local function primary(input) return input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch end
@@ -1017,23 +998,6 @@ local function beginDrag(input)
     end
 end
 drag.InputBegan:Connect(beginDrag)
-panHandle.InputBegan:Connect(function(input)
-    if primary(input) and not busy() then
-        dragging=input; dragStart=input.Position; draggingPan=true; dragOrigin=canvas.CanvasPosition; canvas.ScrollingEnabled=false; closeDropdown()
-    end
-end)
-local function changeZoom(delta)
-    local view=canvas.AbsoluteSize
-    local oldOrigin=root.AbsolutePosition-canvas.AbsolutePosition+canvas.CanvasPosition
-    local focus=(canvas.CanvasPosition+view/2-oldOrigin)/scaleFactor
-    local nextScale=math.clamp(scaleFactor+delta,math.min(MIN_SCALE,autoScaleFactor),1.5)
-    local nextZoom=nextScale/autoScaleFactor
-    if math.abs(nextZoom-gui:GetAttribute("UserZoom"))<.000001 then return end
-    zoomFocus=focus
-    gui:SetAttribute("UserZoom",nextZoom)
-end
-zoomIn.Activated:Connect(function() changeZoom(.1) end)
-zoomOut.Activated:Connect(function() changeZoom(-.1) end)
 resizeHandle.InputBegan:Connect(function(input)
     if not primary(input) or busy() then return end
     closeDropdown(); content.ScrollingEnabled=true
