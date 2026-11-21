@@ -1,4 +1,5 @@
 local LUCIDE = {
+    ["tractor"] = {16898788908,256,256,0,514},
     ["egg"] = {117851493400222,0,0,0,0},
     ["play"] = {135609604299893,0,0,0,0},
     ["flame"] = {10723376114,0,0,0,0},
@@ -32,12 +33,19 @@ local LUCIDE = {
     ["copy"] = {78979572434545,0,0,0,0},
     ["gamepad-2"] = {92483947987410,0,0,0,0},
     ["settings"] = {80758916183665,0,0,0,0},
+    ["map-pin"] = {75227242981157,0,0,0,0},
+    ["star"] = {104452870808420,0,0,0,0},
+    ["shopping-cart"] = {100986954300611,0,0,0,0},
+    ["store"] = {80897806363036,0,0,0,0},
+    ["banknote"] = {107997424163412,0,0,0,0},
+    ["scroll-text"] = {139017006975423,0,0,0,0},
+    ["toolbox"] = {139005338718012,0,0,0,0},
 }
 local Players=game:GetService("Players")
 local Input=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
-local Limbo={Version="1.5.0",SupportsGameIconFallback=true,SupportsAnnouncements=true,SupportsConfigReplay=true,SupportsMultiSelect=true,SupportsSubTabs=true,SupportsTabSubTabs=true}
+local Limbo={Version="1.5.0",SupportsFractionalSliders=true,SupportsGameIconFallback=true,SupportsAnnouncements=true,SupportsConfigReplay=true,SupportsMultiSelect=true,SupportsSubTabs=true,SupportsTabSubTabs=true}
 assert(type(gethui)=="function","LIMBO HUB UI requires gethui().")
 local currentWindow
 function Limbo:PromptKey(config)
@@ -119,7 +127,8 @@ local saved=previous and previous:GetAttributes() or {}
 if previous then previous:Destroy() end
 local C={bg=Color3.fromRGB(27,33,45),sidebar=Color3.fromRGB(22,28,40),card=Color3.fromRGB(38,46,61),field=Color3.fromRGB(30,38,52),hover=Color3.fromRGB(48,61,81),border=Color3.fromRGB(96,112,137),text=Color3.fromRGB(246,249,255),muted=Color3.fromRGB(202,212,227),faint=Color3.fromRGB(174,190,211),blue=Color3.fromRGB(117,181,255),selected=Color3.fromRGB(43,65,99),off=Color3.fromRGB(73,83,102)}
 local BASE_W,BASE_H=1040,600
-local MIN_SCALE=.875
+local MIN_SCALE=.4
+local MIN_ZOOM=.1
 local MIN_TEXT_PIXELS=12
 local LOGO=config.Logo or "rbxassetid://97957114633547"
 local GAME_NAME=config.Subtitle or "NAMA GAME"
@@ -174,9 +183,9 @@ local function tint(f,color) f.ImageColor3=color end
 local function button(target,name)
     local b=make("TextButton",{Name=name,Text="",AutoButtonColor=false,BorderSizePixel=0,BackgroundTransparency=1},target); corner(b,10); return b
 end
-local gui=make("ScreenGui",{Name="LimboHubReferenceUI",ResetOnSpawn=false,DisplayOrder=90,ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets,ClipToDeviceSafeArea=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},parent)
+local gui=make("ScreenGui",{Name="LimboHubReferenceUI",ResetOnSpawn=false,DisplayOrder=90,ScreenInsets=Enum.ScreenInsets.None,ClipToDeviceSafeArea=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},parent)
 gui:SetAttribute("UIOnly",true); gui:SetAttribute("IconLibrary","Lucide"); gui:SetAttribute("IconResolution",256)
-gui:SetAttribute("UserZoom",type(saved.UserZoom)=="number" and math.clamp(saved.UserZoom,.6,10) or 1)
+gui:SetAttribute("UserZoom",type(saved.UserZoom)=="number" and math.clamp(saved.UserZoom,MIN_ZOOM,10) or 1)
 local connections={}
 local function track(c) table.insert(connections,c); return c end
 local function animate(obj,props,duration)
@@ -206,7 +215,7 @@ task.spawn(function()
     local ok,image=pcall(function() return Players:GetUserThumbnailAsync(player.UserId,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size100x100) end)
     if ok and gui.Parent then avatar.Image=image end
 end)
-local nav=make("ScrollingFrame",{Name="Navigation",BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,ScrollBarImageColor3=C.faint,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.Y,ZIndex=4},root)
+local nav=make("ScrollingFrame",{Name="Navigation",BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=0,ScrollBarImageTransparency=1,CanvasSize=UDim2.new(),ScrollingDirection=Enum.ScrollingDirection.Y,ZIndex=4},root)
 local header=box(root,"Header"); header.BackgroundTransparency=1
 local drag=button(header,"DragBar"); drag.Size=UDim2.fromScale(1,1)
 local sidebarToggle=button(header,"SidebarToggle"); hover(sidebarToggle)
@@ -288,16 +297,18 @@ local function fitToast()
     toastScale.Scale=math.min(1,math.max(1,canvas.AbsoluteSize.X-24)/360)
 end
 track(canvas:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitToast)); fitToast()
-local restore=make("TextButton",{Name="Restore",Text="",BackgroundTransparency=1,BorderSizePixel=0,AutoButtonColor=false,ZIndex=100,Visible=false,Size=UDim2.fromOffset(72,72),Position=UDim2.new(.5,-36,.08,-36)},overlay)
+local savedRestore=type(saved.RestoreX)=="number" and type(saved.RestoreY)=="number"
+local restore=make("TextButton",{Name="Restore",Text="",BackgroundTransparency=1,BorderSizePixel=0,AutoButtonColor=false,ZIndex=100,Visible=false,Size=UDim2.fromOffset(72,72),Position=savedRestore and UDim2.fromScale(saved.RestoreX,saved.RestoreY) or UDim2.new(.5,-36,.08,-36)},overlay)
 local restoreIcon=make("ImageLabel",{Name="Logo",Image=LOGO,BackgroundTransparency=1,ScaleType=Enum.ScaleType.Fit,Position=UDim2.fromOffset(4,4),Size=UDim2.fromOffset(64,64)},restore)
 local restoreDrag
 local restoreBlockUntil=0
 local function clampRestore(position)
     local size=overlay.AbsoluteSize
     if size.X<1 or size.Y<1 then return end
-    local x=math.clamp(position.X,0,math.max(0,size.X-restore.AbsoluteSize.X))
-    local y=math.clamp(position.Y,0,math.max(0,size.Y-restore.AbsoluteSize.Y))
+    local x=math.clamp(position.X,24-restore.AbsoluteSize.X,size.X-24)
+    local y=math.clamp(position.Y,24-restore.AbsoluteSize.Y,size.Y-24)
     restore.Position=UDim2.fromScale(x/size.X,y/size.Y)
+    gui:SetAttribute("RestoreX",x/size.X); gui:SetAttribute("RestoreY",y/size.Y)
 end
 track(overlay:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
     restoreDrag=nil
@@ -373,7 +384,8 @@ local function getPanArea(scale)
     local margin=math.min(view.X,view.Y)<700 and 8 or 20
     return Vector2.new(math.max(view.X,logicalW*scale+margin*2),math.max(view.Y,logicalH*scale+margin*2))
 end
-local dragOffset=Vector2.zero
+local dragOffset=Vector2.new(type(saved.WindowOffsetX)=="number" and saved.WindowOffsetX or 0,type(saved.WindowOffsetY)=="number" and saved.WindowOffsetY or 0)
+gui:SetAttribute("WindowOffsetX",dragOffset.X); gui:SetAttribute("WindowOffsetY",dragOffset.Y)
 local dragging,dragStart,dragOrigin,sliding
 local resizing
 local function stopResize()
@@ -650,7 +662,9 @@ local function slider(c,name,caption,default,maxValue,minValue)
     local function set(value)
         assert(type(value)=="number","Slider value must be a number")
         if value~=value then value=minValue end
-        value=math.floor(math.clamp(value,minValue,maxValue)); input.Text=tostring(value); gui:SetAttribute(name,value)
+        value=math.clamp(value,minValue,maxValue)
+        value=(minValue%1~=0 or maxValue%1~=0) and math.floor(value*100+.5)/100 or math.floor(value)
+        input.Text=tostring(value); gui:SetAttribute(name,value)
         local fraction=(value-minValue)/(maxValue-minValue)
         fill.Size=UDim2.new(fraction,0,0,4); knob.Position=UDim2.fromScale(fraction,.5)
     end
@@ -830,21 +844,15 @@ performLayout=function()
     logicalW=math.min(BASE_W*.92,math.max(1,view.X-margin*2))/autoScaleFactor
     logicalH=math.min(BASE_H*.92,math.max(1,view.Y-margin*2))/autoScaleFactor
     local zoom=gui:GetAttribute("UserZoom")
-    zoom=type(zoom)=="number" and zoom==zoom and math.clamp(zoom,.6,10) or 1
+    zoom=type(zoom)=="number" and zoom==zoom and math.clamp(zoom,MIN_ZOOM,10) or 1
     scaleFactor=math.clamp(autoScaleFactor*zoom,math.min(MIN_SCALE,autoScaleFactor),1.5)
-    local physicalW,physicalH=logicalW*scaleFactor,logicalH*scaleFactor
     uiScale.Scale=scaleFactor; fontScale=scaleFactor; root.Size=UDim2.fromOffset(logicalW,logicalH)
     panArea=getPanArea(scaleFactor)
     canvas.CanvasSize=UDim2.fromOffset(panArea.X,panArea.Y)
     panEnabled=panArea.X>view.X+1 or panArea.Y>view.Y+1
     canvas.ScrollingEnabled=panEnabled
     canvas.CanvasPosition=Vector2.new(math.clamp(canvas.CanvasPosition.X,0,math.max(0,panArea.X-view.X)),math.clamp(canvas.CanvasPosition.Y,0,math.max(0,panArea.Y-view.Y)))
-    local maxX=math.max(0,(view.X-physicalW)/2-margin)
-    local maxY=math.max(0,(view.Y-physicalH)/2-margin)
-    local dx=math.clamp(dragOffset.X,-maxX,maxX)
-    local dy=math.clamp(dragOffset.Y,-maxY,maxY)
-    dragOffset=Vector2.new(dx,dy)
-    root.Position=UDim2.fromOffset(panArea.X/2+dx,panArea.Y/2+dy)
+    root.Position=UDim2.fromOffset(panArea.X/2+dragOffset.X,panArea.Y/2+dragOffset.Y)
     fitToast()
     local sideWidth=sidebarCollapsed and 64 or 184
     place(sidebar,0,0,sideWidth,logicalH)
@@ -861,16 +869,17 @@ performLayout=function()
     local navH=math.max(0,logicalH-profileH-navTop-24)
     local navButtonH=math.max(44,28/scaleFactor); local navStep=navButtonH+4
     place(nav,10,navTop,sideWidth-20,navH)
-    nav.CanvasSize=UDim2.fromOffset(0,#navItems*navStep)
-    nav.CanvasPosition=Vector2.new(0,math.min(nav.CanvasPosition.Y,math.max(0,#navItems*navStep-navH)))
+    local navContentH=#navItems*navStep+4
+    nav.CanvasSize=UDim2.fromOffset(0,navContentH)
+    nav.CanvasPosition=Vector2.new(0,math.min(nav.CanvasPosition.Y,math.max(0,navContentH-navH)))
     for name,item in pairs(navButtons) do
         local b=item.button; local on=activePage==name
-        place(b,0,(item.index-1)*navStep,sideWidth-20,navButtonH)
+        place(b,2,2+(item.index-1)*navStep,sideWidth-24,navButtonH)
         item.icon.AnchorPoint=Vector2.new(sidebarCollapsed and .5 or 0,.5)
         item.icon.Position=UDim2.new(sidebarCollapsed and .5 or 0,sidebarCollapsed and 0 or 12,.5,0)
         place(item.label,44,0,sideWidth-64,navButtonH)
         item.label.Visible=not sidebarCollapsed
-        item.indicator.Visible=on and not sidebarCollapsed; place(item.indicator,0,12,3,20)
+        item.indicator.Visible=on and not sidebarCollapsed; place(item.indicator,0,12,5,20)
         item.outline.Transparency=on and .28 or 1
         b.BackgroundTransparency=on and .12 or 1; item.label.TextColor3=on and C.text or C.muted; tint(item.icon,on and C.blue or C.muted)
     end
@@ -909,6 +918,9 @@ performLayout=function()
     local contentH=logicalH-top-footerH-1
     place(content,mainX,top,mainWidth,contentH)
     place(footer,mainX,logicalH-footerH,mainWidth,footerH)
+    local handleUnit=math.max(1,1/scaleFactor)
+    resizeHandle.Size=UDim2.fromOffset(44*handleUnit,35*handleUnit)
+    place(resizeIcon,12*handleUnit,8*handleUnit,20*handleUnit,20*handleUnit)
     local columns=2; local gap=12
     local innerWidth=mainWidth-7
     local cardWidth=(innerWidth-gap)/2
@@ -1069,12 +1081,12 @@ end)
 search:GetPropertyChangedSignal("Text"):Connect(function() updateFeatureSearch() end)
 track(canvas:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
     closeDropdown(); stopResize(); dragging=nil; sliding=nil; content.ScrollingEnabled=true; dragOffset=Vector2.zero
+    gui:SetAttribute("WindowOffsetX",0); gui:SetAttribute("WindowOffsetY",0)
     canvas.CanvasPosition=Vector2.zero; layout()
 end))
 track(gui:GetAttributeChangedSignal("UserZoom"):Connect(function()
     closeDropdown(); layout()
 end))
-local draggingPan=false
 local function primary(input) return input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch end
 local function movedBy(input,owner)
     return input==owner or owner.UserInputType==Enum.UserInputType.MouseButton1 and input.UserInputType==Enum.UserInputType.MouseMovement
@@ -1085,9 +1097,8 @@ end
 local function busy() return dragging or sliding or resizing end
 local function beginDrag(input)
     if primary(input) and not busy() then
-        dragging=input; dragStart=input.Position; draggingPan=panEnabled
-        dragOrigin=draggingPan and canvas.CanvasPosition or dragOffset
-        if draggingPan then canvas.ScrollingEnabled=false end
+        dragging=input; dragStart=input.Position; dragOrigin=dragOffset
+        canvas.ScrollingEnabled=false
         closeDropdown()
     end
 end
@@ -1109,19 +1120,16 @@ track(Input.InputChanged:Connect(function(input)
         local nextScale=resizing.scale+(delta.X*logicalW+delta.Y*logicalH)/(logicalW*logicalW+logicalH*logicalH)
         nextScale=math.clamp(nextScale,math.min(MIN_SCALE,autoScaleFactor),1.5)
         dragOffset=resizing.origin+Vector2.new(logicalW*nextScale/2,logicalH*nextScale/2)-getPanArea(nextScale)/2
-        gui:SetAttribute("UserZoom",math.clamp(nextScale/autoScaleFactor,.6,10))
+        gui:SetAttribute("WindowOffsetX",dragOffset.X); gui:SetAttribute("WindowOffsetY",dragOffset.Y)
+        gui:SetAttribute("UserZoom",math.clamp(nextScale/autoScaleFactor,MIN_ZOOM,10))
         return
     end
     if sliding and movedBy(input,sliding.input) then local s=sliding.slider; s.set((input.Position.X-s.rail.AbsolutePosition.X)/s.rail.AbsoluteSize.X*(s.max-s.min)+s.min) end
     if dragging and movedBy(input,dragging) then
-        local delta=input.Position-dragStart; local v=canvas.AbsoluteSize
-        if draggingPan then
-            canvas.CanvasPosition=Vector2.new(math.clamp(dragOrigin.X-delta.X,0,math.max(0,panArea.X-v.X)),math.clamp(dragOrigin.Y-delta.Y,0,math.max(0,panArea.Y-v.Y)))
-        else
-            local margin=math.min(v.X,v.Y)<700 and 8 or 20
-            local maxX=math.max(0,(v.X-root.AbsoluteSize.X)/2-margin); local maxY=math.max(0,(v.Y-root.AbsoluteSize.Y)/2-margin)
-            dragOffset=Vector2.new(math.clamp(dragOrigin.X+delta.X,-maxX,maxX),math.clamp(dragOrigin.Y+delta.Y,-maxY,maxY)); root.Position=UDim2.fromOffset(panArea.X/2+dragOffset.X,panArea.Y/2+dragOffset.Y)
-        end
+        local delta=input.Position-dragStart
+        dragOffset=dragOrigin+Vector2.new(delta.X,delta.Y)
+        gui:SetAttribute("WindowOffsetX",dragOffset.X); gui:SetAttribute("WindowOffsetY",dragOffset.Y)
+        root.Position=UDim2.fromOffset(panArea.X/2+dragOffset.X,panArea.Y/2+dragOffset.Y)
     end
 end))
 track(Input.InputEnded:Connect(function(input)
@@ -1131,7 +1139,10 @@ track(Input.InputEnded:Connect(function(input)
 end))
 track(Input.WindowFocusReleased:Connect(function() dragging=nil; sliding=nil; stopResize(); content.ScrollingEnabled=true; canvas.ScrollingEnabled=panEnabled end))
 track(Input.InputBegan:Connect(function(input,processed)
-    if not processed and not Input:GetFocusedTextBox() and input.KeyCode==Enum.KeyCode.RightShift then show(not root.Visible) end
+    if not processed and not Input:GetFocusedTextBox() and input.KeyCode==Enum.KeyCode.RightShift then
+        if root.Visible then show(false)
+        else dragOffset=Vector2.zero; gui:SetAttribute("WindowOffsetX",0); gui:SetAttribute("WindowOffsetY",0); canvas.CanvasPosition=Vector2.zero; show(true); layout() end
+    end
     if input.KeyCode==Enum.KeyCode.Escape then closeDropdown() end
 end))
 local Window={Gui=gui}
@@ -1354,7 +1365,8 @@ local function deferControl(section,cfg,kind,factory)
         if kind=="toggle" then assert(type(value)=="boolean","Toggle Value must be boolean"); return value end
         if kind=="slider" then
             assert(type(value)=="number" and value==value and math.abs(value)<math.huge,"Invalid slider value")
-            return math.floor(math.clamp(value,r.min,r.max))
+            local bounded=math.clamp(value,r.min,r.max)
+            return (r.min%1~=0 or r.max%1~=0) and math.floor(bounded*100+.5)/100 or math.floor(bounded)
         end
         if kind=="input" then assert(type(value)=="string" and #value<=r.maxLength,"Invalid input value"); return value end
         if r.multi then
